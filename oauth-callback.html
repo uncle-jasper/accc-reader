@@ -3,12 +3,46 @@
 <head><meta charset="UTF-8"><title>auth</title></head>
 <body>
 <script>
-  // This page is loaded inside a hidden iframe during silent token refresh.
-  // It reads the token from the URL hash and posts it back to the parent window.
-  if (window.location.hash && window.location.hash.includes('access_token')) {
-    window.parent.postMessage(window.location.hash, '*');
-  } else if (window.location.search.includes('error')) {
-    window.parent.postMessage('error=' + window.location.search, '*');
+  const hash = window.location.hash || '';
+  const search = window.location.search || '';
+
+  function hasToken(str) {
+    return str.includes('access_token');
+  }
+
+  if (hasToken(hash) || hasToken(search)) {
+    // Parse from whichever part has the token
+    const raw = hasToken(hash) ? hash.slice(1) : search.slice(1);
+    const p = new URLSearchParams(raw);
+    const token = p.get('access_token');
+    const expiresIn = parseInt(p.get('expires_in') || '3600');
+
+    if (token) {
+      if (window.parent !== window) {
+        // Inside silent refresh iframe — post back to parent
+        window.parent.postMessage('#' + raw, '*');
+      } else {
+        // Main window initial sign-in — store and redirect
+        try {
+          localStorage.setItem('accc_token', JSON.stringify({
+            token: token,
+            expires: Date.now() + (expiresIn - 60) * 1000
+          }));
+        } catch(e) {}
+        window.location.replace('accc-reader.html');
+      }
+    } else {
+      window.location.replace('accc-reader.html');
+    }
+  } else if (search.includes('error')) {
+    if (window.parent !== window) {
+      window.parent.postMessage('error=' + search, '*');
+    } else {
+      window.location.replace('accc-reader.html');
+    }
+  } else {
+    // No token, no error — just redirect home
+    window.location.replace('accc-reader.html');
   }
 </script>
 </body>
