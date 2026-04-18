@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACCC Reader — 當代中文課程</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+TC:wght@300;400;500&display=swap');
+  :root {
+    --bg:#0d0f0e; --bg2:#111412; --bg3:#161a17; --border:#1e2b21;
+    --amber:#c8922a; --amber-dim:#7a5518;
+    --green:#3d9e5f; --green-dim:#1e4d2e; --green-bright:#5cba7d;
+    --text:#b8c9bc; --text-dim:#5a6b5e; --text-faint:#2e3d31;
+    --mono:'Share Tech Mono',monospace; --sans:'Noto Sans TC',sans-serif;
+    --scanline:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);height:100vh;overflow:hidden;}
+  body::before{content:'';position:fixed;inset:0;background:var(--scanline);pointer-events:none;z-index:9999;opacity:0.35;}
+
+  /* AUTH */
+  #auth-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:28px;}
+  .auth-logo{font-size:13px;letter-spacing:0.3em;color:var(--amber);text-align:center;}
+  .auth-logo .sub{font-size:10px;color:var(--text-dim);letter-spacing:0.18em;margin-top:6px;font-family:var(--sans);}
+  .auth-box{border:1px solid var(--border);padding:30px 38px;text-align:center;width:340px;}
+  .auth-box p{font-size:10px;color:var(--text-dim);letter-spacing:0.07em;line-height:1.9;margin-bottom:22px;}
+  .auth-btn{background:var(--green-dim);border:1px solid var(--green);color:var(--green-bright);font-family:var(--mono);font-size:11px;letter-spacing:0.14em;padding:10px 24px;cursor:pointer;transition:all 0.2s;width:100%;}
+  .auth-btn:hover{background:var(--green);color:var(--bg);}
+  .auth-status{font-size:9px;color:var(--text-faint);margin-top:12px;letter-spacing:0.1em;}
+
+  /* APP */
+  #app{display:none;flex-direction:column;height:100vh;}
+  #app.visible{display:flex;}
+
+  /* HEADER */
+  header{border-bottom:1px solid var(--border);padding:10px 18px;display:flex;align-items:center;justify-content:space-between;background:var(--bg2);flex-shrink:0;}
+  .logo{font-size:11px;letter-spacing:0.14em;color:var(--amber);}
+  .logo span{color:var(--text-dim);}
+  .hdr-r{display:flex;align-items:center;gap:14px;}
+  .hdr-meta{font-size:10px;color:var(--text-dim);letter-spacing:0.09em;}
+  .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:5px;animation:pulse 2.5s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.2}}
+  .so-btn{background:none;border:1px solid var(--border);color:var(--text-faint);font-family:var(--mono);font-size:9px;padding:3px 8px;cursor:pointer;letter-spacing:0.09em;transition:all 0.12s;}
+  .so-btn:hover{border-color:var(--amber-dim);color:var(--amber-dim);}
+
+  /* COLUMNS */
+  .cols{display:grid;grid-template-columns:250px 1fr 290px;flex:1;overflow:hidden;}
+
+  /* LEFT */
+  .sl{border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
+  .sb-lbl{font-size:9px;letter-spacing:0.19em;color:var(--text-faint);padding:11px 14px 7px;text-transform:uppercase;border-bottom:1px solid var(--text-faint);flex-shrink:0;}
+  .lesson-list{flex:1;overflow-y:auto;}
+  .li{padding:9px 13px;border-bottom:1px solid var(--text-faint);cursor:pointer;transition:background 0.12s;position:relative;}
+  .li:hover{background:var(--bg3);}
+  .li.active{background:var(--green-dim);border-left:2px solid var(--green);}
+  .li.active .li-num{color:var(--green-bright);}
+  .li-num{font-size:9px;color:var(--amber-dim);letter-spacing:0.14em;margin-bottom:3px;}
+  .li-zh{font-family:var(--sans);font-size:13px;color:var(--text);margin-bottom:2px;}
+  .li-en{font-size:9px;color:var(--text-dim);}
+  .li-bar{height:2px;background:var(--text-faint);margin-top:6px;border-radius:1px;overflow:hidden;}
+  .li-fill{height:100%;background:var(--green);border-radius:1px;transition:width 0.3s;}
+  .sess{border-top:1px solid var(--border);padding:11px 13px;flex-shrink:0;}
+  .sess-lbl{font-size:9px;letter-spacing:0.17em;color:var(--text-faint);text-transform:uppercase;margin-bottom:7px;}
+  .se{display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);padding:3px 0;border-bottom:1px solid var(--text-faint);}
+  .se-t{color:var(--amber-dim);}
+
+  /* CENTER */
+  .main{display:flex;flex-direction:column;overflow:hidden;background:#191919;}
+  .pdf-tb{border-bottom:1px solid var(--border);padding:7px 13px;display:flex;align-items:center;gap:9px;background:var(--bg2);flex-shrink:0;}
+  .tb-btn{background:none;border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:3px 9px;cursor:pointer;letter-spacing:0.07em;transition:all 0.12s;}
+  .tb-btn:hover{border-color:var(--green);color:var(--green-bright);}
+  .pg-ind{font-size:10px;color:var(--text-dim);letter-spacing:0.09em;margin-left:auto;display:flex;align-items:center;gap:5px;}
+  .pg-ind input{background:var(--bg3);border:1px solid var(--border);color:var(--amber);font-family:var(--mono);font-size:10px;width:36px;text-align:center;padding:2px 4px;transition:all 0.2s;}
+  .pg-ind input:focus{outline:none;border-color:var(--amber);}
+  .pg-ind input.flash{color:var(--green-bright);border-color:var(--green);}
+  .pdf-area{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:14px;gap:14px;background:#1c1c1c;}
+  .pdf-cv-wrap{box-shadow:0 4px 28px rgba(0,0,0,0.7);}
+  .pdf-cv-wrap canvas{display:block;}
+  .pdf-state{width:100%;max-width:540px;background:var(--bg2);border:1px solid var(--border);padding:34px;text-align:center;margin:auto;}
+  .ps-msg{font-size:10px;color:var(--text-dim);letter-spacing:0.09em;line-height:2;}
+  .ps-reload{margin-top:18px;font-size:10px;color:var(--green);letter-spacing:0.1em;cursor:pointer;border:1px solid var(--green-dim);padding:7px 14px;display:inline-block;transition:all 0.12s;}
+  .ps-reload:hover{background:var(--green-dim);}
+  .spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 11px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* CHECKLIST */
+  .checklist{width:100%;max-width:540px;margin:0 auto;padding-bottom:24px;}
+  .cl-hdr{font-size:9px;letter-spacing:0.19em;color:var(--text-faint);text-transform:uppercase;padding:10px 0 7px;border-bottom:1px solid var(--text-faint);}
+  .cl-item{display:flex;align-items:center;gap:9px;padding:8px 3px;border-bottom:1px solid var(--text-faint);cursor:pointer;transition:background 0.1s;}
+  .cl-item:hover{background:rgba(61,158,95,0.05);}
+  .cl-box{width:13px;height:13px;border:1px solid var(--text-dim);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--green-bright);transition:all 0.12s;}
+  .cl-box.chk{border-color:var(--green);background:var(--green-dim);}
+  .cl-lbl{flex:1;font-size:11px;color:var(--text-dim);transition:color 0.12s;}
+  .cl-lbl .zh{font-family:var(--sans);margin-right:5px;}
+  .cl-lbl.done{color:var(--text-faint);text-decoration:line-through;}
+  .cl-code{font-size:9px;color:var(--amber-dim);}
+
+  /* RIGHT */
+  .sr{border-left:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
+  .ptabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .ptab{flex:1;padding:8px 4px;font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);cursor:pointer;text-align:center;border:none;border-right:1px solid var(--border);border-bottom:2px solid transparent;font-family:var(--mono);background:none;transition:all 0.12s;}
+  .ptab:last-child{border-right:none;}
+  .ptab.active{color:var(--amber);border-bottom:2px solid var(--amber);background:var(--bg3);}
+  .ptab:hover:not(.active){color:var(--text);background:var(--bg3);}
+  .panel{flex:1;overflow-y:auto;display:none;flex-direction:column;}
+  .panel.active{display:flex;}
+
+  /* NOW PLAYING */
+  .np{padding:13px 14px;border-bottom:1px solid var(--border);background:var(--bg3);flex-shrink:0;}
+  .np-lbl{font-size:9px;letter-spacing:0.17em;color:var(--text-faint);text-transform:uppercase;margin-bottom:5px;}
+  .np-title{font-size:12px;color:var(--amber);margin-bottom:3px;}
+  .np-title .zh{font-family:var(--sans);margin-right:5px;}
+  .np-q{font-size:9px;color:var(--amber-dim);letter-spacing:0.09em;margin-bottom:9px;min-height:12px;}
+  .waveform{height:26px;display:flex;align-items:center;gap:2px;margin-bottom:8px;}
+  .wb{flex:1;background:var(--green-dim);border-radius:1px;}
+  .waveform.playing .wb{animation:wv 1s ease-in-out infinite;}
+  .waveform.playing .wb:nth-child(2n){animation-delay:0.1s}
+  .waveform.playing .wb:nth-child(3n){animation-delay:0.22s}
+  .waveform.playing .wb:nth-child(4n){animation-delay:0.34s}
+  .waveform.playing .wb:nth-child(5n){animation-delay:0.15s}
+  @keyframes wv{0%,100%{height:3px}50%{height:19px;background:var(--green)}}
+  .prog{height:3px;background:var(--text-faint);border-radius:2px;cursor:pointer;margin-bottom:6px;}
+  .prog-fill{height:100%;background:var(--green);border-radius:2px;width:0%;transition:width 0.15s;}
+  .time-row{display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);margin-bottom:10px;}
+  .transport{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+  .tr-btn{background:none;border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:11px;width:29px;height:29px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.12s;flex-shrink:0;}
+  .tr-btn:hover{border-color:var(--green);color:var(--green-bright);}
+  .tr-btn.play{width:35px;height:35px;border-color:var(--green);color:var(--green-bright);font-size:13px;}
+  .tr-btn.play:hover{background:var(--green-dim);}
+  .rpl{font-size:7px;}
+  .speeds{margin-left:auto;display:flex;gap:3px;}
+  .spd{background:none;border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:9px;padding:2px 5px;cursor:pointer;transition:all 0.12s;}
+  .spd.active{border-color:var(--amber);color:var(--amber);background:rgba(200,146,42,0.07);}
+  .spd:hover:not(.active){color:var(--text);border-color:var(--text-dim);}
+
+  /* TRACK LIST */
+  .tl-lbl{font-size:9px;letter-spacing:0.17em;color:var(--text-faint);padding:9px 14px 5px;text-transform:uppercase;border-bottom:1px solid var(--text-faint);flex-shrink:0;}
+  .ti{padding:8px 14px;border-bottom:1px solid var(--text-faint);cursor:pointer;display:flex;align-items:center;gap:8px;transition:background 0.12s;}
+  .ti:hover{background:var(--bg3);}
+  .ti.active{background:var(--green-dim);border-left:2px solid var(--green);}
+  .ti-code{font-size:9px;color:var(--amber-dim);width:32px;flex-shrink:0;}
+  .ti-info{flex:1;min-width:0;}
+  .ti-zh{font-family:var(--sans);font-size:12px;color:var(--text);margin-bottom:1px;}
+  .ti-en{font-size:9px;color:var(--text-dim);}
+  .ti-arr{font-size:9px;color:var(--text-faint);}
+  .ti.active .ti-arr{color:var(--green-bright);}
+
+  /* VOCAB */
+  .vs-lbl{font-size:9px;letter-spacing:0.17em;color:var(--text-faint);padding:9px 14px 5px;text-transform:uppercase;border-bottom:1px solid var(--text-faint);}
+  .vi{display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:start;padding:7px 14px;border-bottom:1px solid var(--text-faint);transition:background 0.1s;}
+  .vi:hover{background:var(--bg3);}
+  .vi-n{font-size:9px;color:var(--text-faint);}
+  .vi-zh{font-family:var(--sans);font-size:14px;color:var(--text);margin-bottom:1px;}
+  .vi-py{font-size:9px;color:var(--amber);margin-bottom:1px;}
+  .vi-en{font-size:9px;color:var(--text-dim);}
+  .vi-pos{font-size:8px;color:var(--green-dim);border:1px solid var(--green-dim);padding:1px 3px;height:fit-content;margin-top:3px;}
+
+  /* NOTES */
+  .nc{padding:8px 14px;border-bottom:1px solid var(--border);font-size:9px;color:var(--text-dim);letter-spacing:0.07em;background:var(--bg3);flex-shrink:0;}
+  .nc span{color:var(--amber);}
+  .nta{flex:1;background:var(--bg);border:none;color:var(--text);font-family:var(--mono);font-size:11px;padding:13px;resize:none;line-height:1.9;}
+  .nta:focus{outline:none;}
+  .nta::placeholder{color:var(--text-faint);}
+  .nfoot{padding:6px 14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg2);flex-shrink:0;}
+  .nsave{background:none;border:1px solid var(--green-dim);color:var(--green);font-family:var(--mono);font-size:9px;padding:3px 10px;cursor:pointer;letter-spacing:0.09em;transition:all 0.12s;}
+  .nsave:hover{background:var(--green-dim);}
+  .nmsg{font-size:9px;color:var(--text-faint);letter-spacing:0.07em;}
+
+  ::-webkit-scrollbar{width:4px;}
+  ::-webkit-scrollbar-track{background:var(--bg);}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--text-faint);}
+</style>
+</head>
+<body>
+
+<div id="auth-screen">
+  <div class="auth-logo">
+    ACCC// READER
+    <div class="sub">當代中文課程 · Book 5</div>
+  </div>
+  <div class="auth-box">
+    <p>Connect your Google Drive to load<br>your textbook and audio files.<br><br>Your files stay in your Drive.<br>Nothing is uploaded or stored elsewhere.</p>
+    <button class="auth-btn" onclick="signIn()">▸ CONNECT GOOGLE DRIVE</button>
+    <div class="auth-status" id="auth-status">// waiting for authorization</div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="logo">ACCC// <span>當代中文課程 · Book 5</span></div>
+    <div class="hdr-r">
+      <div class="hdr-meta"><span class="dot"></span><span id="user-email">connected</span> · <span id="clock"></span></div>
+      <button class="so-btn" onclick="signOut()">SIGN OUT</button>
+    </div>
+  </header>
+
+  <div class="cols">
+    <!-- LEFT -->
+    <div class="sl">
+      <div class="sb-lbl">// lessons · book 5</div>
+      <div class="lesson-list" id="lesson-list"></div>
+      <div class="sess">
+        <div class="sess-lbl">// session log</div>
+        <div id="sess-entries"></div>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="main">
+      <div class="pdf-tb">
+        <button class="tb-btn" onclick="changePage(-1)">◀ PREV</button>
+        <button class="tb-btn" onclick="changePage(1)">NEXT ▶</button>
+        <div class="pg-ind">
+          PAGE <input type="number" id="pg-input" value="1" min="1" onchange="goToPage(this.value)">
+          / <span id="pg-total">—</span>
+        </div>
+      </div>
+      <div class="pdf-area" id="pdf-area">
+        <div id="pdf-state" class="pdf-state">
+          <div class="spin"></div>
+          <div class="ps-msg" id="ps-msg">Connecting to Google Drive…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="sr">
+      <div class="ptabs">
+        <button class="ptab active" onclick="switchPanel('audio')">AUDIO</button>
+        <button class="ptab" onclick="switchPanel('vocab')">詞彙</button>
+        <button class="ptab" onclick="switchPanel('notes')">NOTES</button>
+      </div>
+
+      <div class="panel active" id="panel-audio">
+        <div class="np">
+          <div class="np-lbl">// now playing</div>
+          <div class="np-title" id="np-title"><span class="zh">—</span></div>
+          <div class="np-q" id="np-q">// select a section to begin</div>
+          <div class="waveform" id="waveform">
+            <div class="wb" style="height:4px"></div><div class="wb" style="height:13px"></div>
+            <div class="wb" style="height:7px"></div><div class="wb" style="height:18px"></div>
+            <div class="wb" style="height:5px"></div><div class="wb" style="height:20px"></div>
+            <div class="wb" style="height:9px"></div><div class="wb" style="height:15px"></div>
+            <div class="wb" style="height:4px"></div><div class="wb" style="height:19px"></div>
+            <div class="wb" style="height:8px"></div><div class="wb" style="height:13px"></div>
+            <div class="wb" style="height:5px"></div><div class="wb" style="height:17px"></div>
+            <div class="wb" style="height:10px"></div><div class="wb" style="height:6px"></div>
+            <div class="wb" style="height:21px"></div><div class="wb" style="height:11px"></div>
+            <div class="wb" style="height:4px"></div><div class="wb" style="height:16px"></div>
+          </div>
+          <div class="prog" id="prog" onclick="seekAudio(event,this)"><div class="prog-fill" id="prog-fill"></div></div>
+          <div class="time-row"><span id="t-cur">0:00</span><span id="t-tot">0:00</span></div>
+          <div class="transport">
+            <button class="tr-btn" onclick="replay10()" title="Replay 10s">↺<span class="rpl">10</span></button>
+            <button class="tr-btn play" id="play-btn" onclick="togglePlay()">▶</button>
+            <button class="tr-btn" onclick="nextTrack()">▶▶</button>
+            <div class="speeds">
+              <button class="spd" onclick="setSpeed(0.5,this)">×.5</button>
+              <button class="spd" onclick="setSpeed(0.75,this)">×.75</button>
+              <button class="spd active" onclick="setSpeed(1,this)">×1</button>
+              <button class="spd" onclick="setSpeed(1.25,this)">×1.25</button>
+            </div>
+          </div>
+        </div>
+        <div class="tl-lbl" id="tl-lbl">// select a lesson</div>
+        <div id="track-list"></div>
+      </div>
+
+      <div class="panel" id="panel-vocab">
+        <div id="vocab-content"></div>
+      </div>
+
+      <div class="panel" id="panel-notes">
+        <div class="nc">Notes: <span id="notes-ctx">select a section</span></div>
+        <textarea class="nta" id="nta" placeholder="// tutor notes, observations, questions…&#10;&#10;e.g. 即使是…也不例外 — stronger than 雖然...但是..."></textarea>
+        <div class="nfoot">
+          <span class="nmsg" id="nmsg">// unsaved</span>
+          <button class="nsave" onclick="saveNote()">SAVE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<audio id="audio-el" preload="auto"></audio>
+
+<script>
+const CLIENT_ID = '575451523934-jp5gb2tpq5avnpk7nkp5ufb4p2m3ud7g.apps.googleusercontent.com';
+const FOLDER_ID = '1R78QCS-nYdqWpFSY5mjaqDmV5lcEPr4F';
+const SCOPES    = 'https://www.googleapis.com/auth/drive';
+
+const MANIFEST = [
+  { lesson:1, zh:'言論自由的界線', en:'The Limits of Free Speech', pages:[1,26],
+    tracks:[
+      {file:'01-01.mp3',zh:'引言',    en:'Introduction',     page:1 },
+      {file:'01-02.mp3',zh:'課文一',  en:'Text 1',           page:2 },
+      {file:'01-03.mp3',zh:'生詞',    en:'New Words',        page:4 },
+      {file:'01-04.mp3',zh:'語法點',  en:'Grammar Points',   page:6 },
+      {file:'01-05.mp3',zh:'四字格',  en:'4-Char Idioms',    page:10},
+      {file:'01-06.mp3',zh:'課文二',  en:'Text 2',           page:12},
+      {file:'01-07.mp3',zh:'生詞二',  en:'New Words 2',      page:13},
+      {file:'01-08.mp3',zh:'語法點二',en:'Grammar Points 2', page:15},
+    ],
+    vocab:{
+      '引言':[
+        {n:1,zh:'言論',  py:'yánlùn',  en:'speech, act of speaking',       pos:'N'},
+        {n:2,zh:'界線',  py:'jièxiàn', en:'boundaries, demarcation',       pos:'N'},
+        {n:3,zh:'臉書',  py:'Liǎnshū', en:'Facebook',                      pos:'N'},
+        {n:4,zh:'則',    py:'zé',      en:'measure for short formal writings',pos:'M'},
+        {n:5,zh:'留言',  py:'liúyán',  en:'posted messages, comments',     pos:'N'},
+        {n:6,zh:'停止',  py:'tíngzhǐ', en:'to call off, cease',            pos:'Vp'},
+        {n:7,zh:'決策',  py:'juécè',   en:'policy',                        pos:'N'},
+      ],
+      '課文一':[
+        {n:1, zh:'無罪',   py:'wúzuì',        en:'not guilty',                   pos:'Vs'},
+        {n:2, zh:'反應',   py:'fǎnyìng',      en:'reaction; to respond',         pos:'N/V'},
+        {n:3, zh:'發表',   py:'fābiǎo',       en:'to publish, deliver',          pos:'V'},
+        {n:4, zh:'包容',   py:'bāoróng',      en:'tolerant',                     pos:'Vst'},
+        {n:5, zh:'展現',   py:'zhǎnxiàn',     en:'to reveal, show',              pos:'V'},
+        {n:6, zh:'胡作非為',py:'húzuò fēiwéi',en:'run amok, lawless behavior',   pos:'Id'},
+        {n:7, zh:'洗腦',   py:'xǐnǎo',        en:'to brainwash',                 pos:'Vi'},
+        {n:8, zh:'盲點',   py:'mángdiǎn',     en:'blind spot',                   pos:'N'},
+        {n:9, zh:'立場',   py:'lìchǎng',      en:'standpoint, perspective',      pos:'N'},
+        {n:10,zh:'平衡',   py:'pínghéng',     en:'balance',                      pos:'N'},
+        {n:11,zh:'辯護',   py:'biànhù',       en:'to defend (legally)',          pos:'Vi'},
+        {n:12,zh:'真理',   py:'zhēnlǐ',       en:'the truth',                    pos:'N'},
+        {n:13,zh:'共識',   py:'gòngshí',      en:'consensus',                    pos:'N'},
+        {n:14,zh:'仇恨',   py:'chóuhèn',      en:'hatred, hostility',            pos:'N'},
+        {n:15,zh:'謠言',   py:'yáoyán',       en:'rumor',                        pos:'N'},
+        {n:16,zh:'霸凌',   py:'bàlíng',       en:'bully; to bully',              pos:'N/V'},
+        {n:17,zh:'負責',   py:'fùzé',         en:'to take responsibility',       pos:'Vs'},
+        {n:18,zh:'誤解',   py:'wùjiě',        en:'to misunderstand',             pos:'V'},
+        {n:19,zh:'封住',   py:'fēngzhù',      en:'to seal, block',               pos:'V'},
+      ],
+    }
+  },
+  {lesson:2, zh:'關於基改食品，我有話要說',en:'GM Foods',              pages:[27,50],  tracks:[],vocab:{}},
+  {lesson:3, zh:'整型好不好',              en:'Plastic Surgery',       pages:[51,70],  tracks:[],vocab:{}},
+  {lesson:4, zh:'傳統與現代',              en:'Traditional and Modern',pages:[71,94],  tracks:[],vocab:{}},
+  {lesson:5, zh:'代理孕母，帶來幸福？',    en:'Surrogate Motherhood',  pages:[95,120], tracks:[],vocab:{}},
+  {lesson:6, zh:'死刑的存廢',              en:'Capital Punishment',    pages:[121,142],tracks:[],vocab:{}},
+  {lesson:7, zh:'增富人稅＝減窮人苦？',    en:'Taxing the Rich',       pages:[143,162],tracks:[],vocab:{}},
+  {lesson:8, zh:'左右為難的難民問題',      en:'Immigration Dilemma',   pages:[163,188],tracks:[],vocab:{}},
+  {lesson:9, zh:'有核到底可不可？',        en:'Nuclear Power',         pages:[189,210],tracks:[],vocab:{}},
+  {lesson:10,zh:'同性婚姻合法化',          en:'Legalizing Same-Sex Marriage',pages:[211,230],tracks:[],vocab:{}},
+];
+
+let token=null, driveFiles={}, pdfDoc=null, curPage=1, totPages=0;
+let curLesson=null, curTrack=null, progress={}, sessLog=[];
+const audio = document.getElementById('audio-el');
+
+// ── AUTH ──
+function signIn() {
+  const p = new URLSearchParams({
+    client_id:client_id=CLIENT_ID,
+    redirect_uri:location.href.split('?')[0].split('#')[0],
+    response_type:'token', scope:SCOPES, include_granted_scopes:'true'
+  });
+  location.href='https://accounts.google.com/o/oauth2/v2/auth?'+p;
+}
+function signOut() {
+  token=null;
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('auth-screen').style.display='flex';
+}
+function checkAuth() {
+  if(!location.hash.includes('access_token')) return;
+  const p=new URLSearchParams(location.hash.slice(1));
+  token=p.get('access_token');
+  history.replaceState(null,'',location.pathname);
+  launch();
+}
+
+// ── LAUNCH ──
+async function launch() {
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').classList.add('visible');
+  try {
+    const u=await gf('https://www.googleapis.com/oauth2/v3/userinfo');
+    document.getElementById('user-email').textContent=u.email||'connected';
+  } catch(e){}
+  startClock(); buildLessonList(); loadProgress(); buildSessLog();
+  await indexFiles();
+  selectLesson(0);
+}
+
+// ── DRIVE ──
+async function gf(url,opts={}) {
+  const r=await fetch(url,{...opts,headers:{Authorization:`Bearer ${token}`,...(opts.headers||{})}});
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function indexFiles() {
+  setMsg('Scanning Drive folder…');
+  try {
+    let pt=null;
+    do {
+      const q=new URLSearchParams({q:`'${FOLDER_ID}' in parents and trashed=false`,fields:'nextPageToken,files(id,name)',pageSize:200,...(pt?{pageToken:pt}:{})});
+      const res=await gf('https://www.googleapis.com/drive/v3/files?'+q);
+      res.files.forEach(f=>driveFiles[f.name]=f.id);
+      pt=res.nextPageToken;
+    } while(pt);
+    const pdf=Object.keys(driveFiles).find(n=>n.toLowerCase().endsWith('.pdf'));
+    if(pdf){ setMsg(`Loading ${pdf}…`); await loadPDF(driveFiles[pdf]); }
+    else setMsg('No PDF found in your Drive folder.\nAdd your textbook PDF and reload.',true);
+  } catch(e){ setMsg('Error accessing Drive. Check console.',true); console.error(e); }
+}
+async function getAudioURL(filename) {
+  const id=driveFiles[filename];
+  if(!id) return null;
+  return `https://www.googleapis.com/drive/v3/files/${id}?alt=media&access_token=${token}`;
+}
+
+// ── PDF ──
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+async function loadPDF(id) {
+  try {
+    pdfDoc=await pdfjsLib.getDocument({url:`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,httpHeaders:{Authorization:`Bearer ${token}`}}).promise;
+    totPages=pdfDoc.numPages;
+    document.getElementById('pg-total').textContent=totPages;
+    hideState();
+    renderPage(1);
+  } catch(e){ setMsg('Error loading PDF.',true); console.error(e); }
+}
+async function renderPage(n) {
+  if(!pdfDoc) return;
+  n=Math.max(1,Math.min(totPages,n));
+  curPage=n;
+  document.getElementById('pg-input').value=n;
+  const page=await pdfDoc.getPage(n);
+  const area=document.getElementById('pdf-area');
+  const w=area.clientWidth-28;
+  const vp0=page.getViewport({scale:1});
+  const scale=Math.min(w/vp0.width,2);
+  const vp=page.getViewport({scale});
+  let wrap=document.getElementById('pdf-cv-wrap');
+  if(!wrap){ wrap=document.createElement('div'); wrap.id='pdf-cv-wrap'; wrap.className='pdf-cv-wrap'; area.innerHTML=''; area.appendChild(wrap); }
+  let canvas=wrap.querySelector('canvas');
+  if(!canvas){ canvas=document.createElement('canvas'); wrap.appendChild(canvas); }
+  canvas.width=vp.width; canvas.height=vp.height;
+  wrap.style.width=vp.width+'px'; wrap.style.height=vp.height+'px';
+  await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+  // Append checklist after canvas if lesson is selected
+  if(curLesson!==null) appendChecklist();
+}
+function changePage(d){ renderPage(curPage+d); }
+function goToPage(v){ renderPage(parseInt(v)||1); }
+function jumpPage(p){
+  renderPage(p);
+  const inp=document.getElementById('pg-input');
+  inp.classList.add('flash');
+  setTimeout(()=>inp.classList.remove('flash'),700);
+}
+function setMsg(msg,reload=false){
+  let s=document.getElementById('pdf-state');
+  if(!s){ s=document.createElement('div'); s.id='pdf-state'; s.className='pdf-state'; document.getElementById('pdf-area').prepend(s); }
+  s.style.display='block';
+  s.innerHTML=`<div class="spin"></div><div class="ps-msg">${msg}</div>${reload?'<div class="ps-reload" onclick="location.reload()">↺ RELOAD</div>':''}`;
+}
+function hideState(){ const s=document.getElementById('pdf-state'); if(s) s.style.display='none'; }
+
+// ── LESSONS ──
+function buildLessonList(){
+  document.getElementById('lesson-list').innerHTML=MANIFEST.map((l,i)=>`
+    <div class="li" id="li-${i}" onclick="selectLesson(${i})">
+      <div class="li-num">LESSON ${String(l.lesson).padStart(2,'0')}</div>
+      <div class="li-zh">${l.zh}</div>
+      <div class="li-en">${l.en}</div>
+      <div class="li-bar"><div class="li-fill" id="lf-${i}" style="width:0%"></div></div>
+    </div>`).join('');
+}
+function selectLesson(idx){
+  curLesson=idx; curTrack=null;
+  const L=MANIFEST[idx];
+  document.querySelectorAll('.li').forEach((el,i)=>el.classList.toggle('active',i===idx));
+  document.getElementById('pg-total').textContent=L.pages[1];
+  jumpPage(L.pages[0]);
+  buildTrackList(L);
+  buildVocab(L);
+  document.getElementById('tl-lbl').textContent=`// lesson ${String(L.lesson).padStart(2,'0')} · tracks`;
+  audio.pause(); audio.src='';
+  document.getElementById('play-btn').textContent='▶';
+  document.getElementById('waveform').classList.remove('playing');
+  document.getElementById('np-title').innerHTML=`<span class="zh">${L.zh}</span>`;
+  document.getElementById('np-q').textContent='// select a section to begin';
+  document.getElementById('prog-fill').style.width='0%';
+  document.getElementById('t-cur').textContent='0:00';
+  document.getElementById('t-tot').textContent='0:00';
+  document.getElementById('notes-ctx').textContent=`L${L.lesson} · ${L.zh}`;
+  document.getElementById('nta').value=getNote(idx,null);
+  document.getElementById('nmsg').textContent='// unsaved';
+  applyProgress(idx);
+}
+
+// ── TRACKS ──
+function buildTrackList(L){
+  const list=document.getElementById('track-list');
+  if(!L.tracks.length){ list.innerHTML=`<div style="padding:18px 14px;font-size:10px;color:var(--text-faint);letter-spacing:0.09em;">// tracks not yet mapped for this lesson</div>`; return; }
+  list.innerHTML=L.tracks.map((t,i)=>`
+    <div class="ti" id="ti-${i}" onclick="selectTrack(${i})">
+      <div class="ti-code">${t.file.replace('.mp3','')}</div>
+      <div class="ti-info"><div class="ti-zh">${t.zh}</div><div class="ti-en">${t.en}</div></div>
+      <div class="ti-arr">▶</div>
+    </div>`).join('');
+}
+async function selectTrack(idx){
+  const L=MANIFEST[curLesson]; const T=L.tracks[idx];
+  curTrack=idx;
+  document.querySelectorAll('.ti').forEach((el,i)=>el.classList.toggle('active',i===idx));
+  audio.pause();
+  document.getElementById('play-btn').textContent='▶';
+  document.getElementById('waveform').classList.remove('playing');
+  document.getElementById('np-title').innerHTML=`<span class="zh">${T.zh}</span> · ${T.file.replace('.mp3','')}`;
+  document.getElementById('np-q').textContent='// loading audio…';
+  document.getElementById('prog-fill').style.width='0%';
+  document.getElementById('t-cur').textContent='0:00';
+  document.getElementById('t-tot').textContent='0:00';
+  jumpPage(T.page);
+  document.getElementById('notes-ctx').textContent=`L${L.lesson} · ${T.zh} · ${T.file.replace('.mp3','')}`;
+  document.getElementById('nta').value=getNote(curLesson,idx);
+  document.getElementById('nmsg').textContent=getNote(curLesson,idx)?'// saved':'// unsaved';
+  const url=await getAudioURL(T.file);
+  if(url){ audio.src=url; audio.load(); document.getElementById('np-q').textContent='// queued · press ▶ to play'; }
+  else document.getElementById('np-q').textContent=`// file not found: ${T.file}`;
+  switchPanel('audio');
+}
+
+// ── AUDIO ──
+function togglePlay(){
+  if(!audio.src) return;
+  if(audio.paused){ audio.play(); document.getElementById('play-btn').textContent='⏸'; document.getElementById('waveform').classList.add('playing'); document.getElementById('np-q').textContent=''; }
+  else { audio.pause(); document.getElementById('play-btn').textContent='▶'; document.getElementById('waveform').classList.remove('playing'); }
+}
+function replay10(){ audio.currentTime=Math.max(0,audio.currentTime-10); }
+function nextTrack(){
+  const L=MANIFEST[curLesson]; if(!L||!L.tracks.length) return;
+  selectTrack(curTrack===null?0:(curTrack+1)%L.tracks.length);
+}
+function setSpeed(s,btn){
+  audio.playbackRate=s;
+  document.querySelectorAll('.spd').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function seekAudio(e,el){
+  if(!audio.duration) return;
+  audio.currentTime=((e.clientX-el.getBoundingClientRect().left)/el.offsetWidth)*audio.duration;
+}
+audio.addEventListener('timeupdate',()=>{
+  if(!audio.duration) return;
+  document.getElementById('prog-fill').style.width=((audio.currentTime/audio.duration)*100)+'%';
+  document.getElementById('t-cur').textContent=fmt(audio.currentTime);
+  document.getElementById('t-tot').textContent=fmt(audio.duration);
+});
+audio.addEventListener('ended',()=>{
+  document.getElementById('play-btn').textContent='▶';
+  document.getElementById('waveform').classList.remove('playing');
+});
+function fmt(s){ return Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0'); }
+
+// ── VOCAB ──
+function buildVocab(L){
+  const c=document.getElementById('vocab-content');
+  if(!Object.keys(L.vocab).length){ c.innerHTML=`<div style="padding:18px 14px;font-size:10px;color:var(--text-faint);letter-spacing:0.09em;">// vocab not yet mapped</div>`; return; }
+  c.innerHTML=Object.entries(L.vocab).map(([sec,words])=>`
+    <div class="vs-lbl">// ${String(L.lesson).padStart(2,'0')} · ${sec}</div>
+    ${words.map(w=>`<div class="vi"><div class="vi-n">${w.n}</div><div><div class="vi-zh">${w.zh}</div><div class="vi-py">${w.py}</div><div class="vi-en">${w.en}</div></div><div class="vi-pos">${w.pos}</div></div>`).join('')}
+  `).join('');
+}
+
+// ── CHECKLIST ──
+function appendChecklist(){
+  const L=MANIFEST[curLesson]; if(!L||!L.tracks.length) return;
+  const area=document.getElementById('pdf-area');
+  let cl=document.getElementById('cl-wrap'); if(cl) cl.remove();
+  const saved=progress[curLesson]?.checked||[];
+  cl=document.createElement('div'); cl.id='cl-wrap'; cl.className='checklist';
+  cl.innerHTML=`<div class="cl-hdr">// lesson ${String(L.lesson).padStart(2,'0')} · section progress</div>`+
+    L.tracks.map((t,i)=>{
+      const chk=saved[i]||false;
+      return `<div class="cl-item" onclick="clClick(${curLesson},${i},event)">
+        <div class="cl-box ${chk?'chk':''}" id="clb-${curLesson}-${i}">${chk?'✓':''}</div>
+        <div class="cl-lbl ${chk?'done':''}" id="cll-${curLesson}-${i}"><span class="zh">${t.zh}</span>${t.en}</div>
+        <div class="cl-code">${t.file.replace('.mp3','')}</div>
+      </div>`;
+    }).join('');
+  area.appendChild(cl);
+  updateProgressBar(curLesson);
+}
+function clClick(li,ti,e){
+  const box=document.getElementById(`clb-${li}-${ti}`);
+  const lbl=document.getElementById(`cll-${li}-${ti}`);
+  if(e.target===box||e.target.closest('.cl-box')===box){
+    const chk=!box.classList.contains('chk');
+    box.classList.toggle('chk',chk); box.textContent=chk?'✓':'';
+    lbl.classList.toggle('done',chk);
+    if(!progress[li]) progress[li]={checked:[],notes:{}};
+    progress[li].checked[ti]=chk;
+    saveProgress(); updateProgressBar(li);
+  } else { selectTrack(ti); switchPanel('audio'); }
+}
+function updateProgressBar(li){
+  const L=MANIFEST[li]; if(!L.tracks.length) return;
+  const saved=progress[li]?.checked||[];
+  const pct=(saved.filter(Boolean).length/L.tracks.length)*100;
+  const f=document.getElementById(`lf-${li}`); if(f) f.style.width=pct+'%';
+}
+
+// ── PROGRESS ──
+function loadProgress(){ try{ progress=JSON.parse(localStorage.getItem('accc-progress')||'{}'); }catch(e){} }
+function saveProgress(){
+  localStorage.setItem('accc-progress',JSON.stringify(progress));
+  syncToDrive();
+}
+async function syncToDrive(){
+  const body=JSON.stringify(progress,null,2);
+  try {
+    const id=driveFiles['progress.json'];
+    if(id){
+      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body});
+    } else {
+      const meta=JSON.stringify({name:'progress.json',parents:[FOLDER_ID]});
+      const form=new FormData();
+      form.append('metadata',new Blob([meta],{type:'application/json'}));
+      form.append('file',new Blob([body],{type:'application/json'}));
+      const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:form});
+      const nf=await r.json(); driveFiles['progress.json']=nf.id;
+    }
+  } catch(e){ console.warn('Sync failed',e); }
+}
+function applyProgress(li){ updateProgressBar(li); }
+
+// ── NOTES ──
+function getNote(li,ti){ const k=ti===null?'lesson':`t${ti}`; return progress[li]?.notes?.[k]||''; }
+function saveNote(){
+  const k=curTrack===null?'lesson':`t${curTrack}`;
+  const v=document.getElementById('nta').value;
+  if(!progress[curLesson]) progress[curLesson]={checked:[],notes:{}};
+  if(!progress[curLesson].notes) progress[curLesson].notes={};
+  progress[curLesson].notes[k]=v;
+  saveProgress(); logSess();
+  document.getElementById('nmsg').textContent='// saved '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+}
+
+// ── SESSION LOG ──
+function logSess(){
+  const L=MANIFEST[curLesson];
+  const lbl=`L${L.lesson}${curTrack!==null?' · '+L.tracks[curTrack]?.zh:''}`;
+  const time=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  sessLog=[{lbl,time},...sessLog.filter(e=>e.lbl!==lbl)].slice(0,5);
+  localStorage.setItem('accc-sesslog',JSON.stringify(sessLog));
+  buildSessLog();
+}
+function buildSessLog(){
+  try{ sessLog=JSON.parse(localStorage.getItem('accc-sesslog')||'[]'); }catch(e){}
+  document.getElementById('sess-entries').innerHTML=sessLog.length
+    ?sessLog.map(e=>`<div class="se"><span>${e.lbl}</span><span class="se-t">${e.time}</span></div>`).join('')
+    :`<div class="se"><span style="color:var(--text-faint)">// no sessions yet</span></div>`;
+}
+
+// ── PANELS ──
+function switchPanel(n){
+  ['audio','vocab','notes'].forEach((p,i)=>{
+    document.querySelectorAll('.ptab')[i].classList.toggle('active',p===n);
+    document.getElementById('panel-'+p).classList.toggle('active',p===n);
+    document.getElementById('panel-'+p).style.display=p===n?'flex':'none';
+  });
+}
+// Fix: panel display init
+document.querySelectorAll('.panel').forEach(p=>{ if(!p.classList.contains('active')) p.style.display='none'; });
+
+// ── CLOCK ──
+function startClock(){
+  const t=()=>document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+  t(); setInterval(t,1000);
+}
+
+window.addEventListener('load',()=>{ checkAuth(); buildSessLog(); });
+</script>
+</body>
+</html>
