@@ -500,12 +500,15 @@ async function indexFiles() {
 
     console.log('Drive files found:', Object.keys(driveFiles));
 
-    const pdf = Object.keys(driveFiles).find(n => n.toLowerCase().endsWith('.pdf'));
+    const PDF_NAME = 'A Course in Contemporary Chinese-5 (900w).pdf';
+    const pdf = Object.keys(driveFiles).find(n => n === PDF_NAME)
+             || Object.keys(driveFiles).find(n => n.toLowerCase().includes('900w') && n.toLowerCase().endsWith('.pdf'))
+             || Object.keys(driveFiles).find(n => n.toLowerCase().endsWith('.pdf') && !n.toLowerCase().includes('作業本') && !n.toLowerCase().includes('workbook'));
     if (pdf) {
-      setMsg(`Found: ${pdf}\nLoading…`);
+      setMsg(`Loading ${pdf}…`);
       await loadPDF(driveFiles[pdf]);
     } else {
-      setMsg('No PDF found in Drive folder.\nAdd your textbook PDF and reload.', true);
+      setMsg('No textbook PDF found in Drive folder.\nMake sure "A Course in Contemporary Chinese-5 (900w).pdf" is in the folder.', true);
     }
   } catch(e) {
     setMsg(`Drive error: ${e.message}\nCheck console for details.`, true);
