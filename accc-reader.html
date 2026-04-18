@@ -521,15 +521,38 @@ async function indexFiles() {
   }
 }
 
-// Fetch audio as blob to avoid CORS streaming issues
+// Fetch audio as blob — cached in Cache API after first fetch
 async function getAudioBlob(filename) {
   if (audioBlobURLs[filename]) return audioBlobURLs[filename];
   const id = driveFiles[filename];
   if (!id) { console.warn('Audio file not found in Drive:', filename); return null; }
+  const cacheKey = `audio-${id}`;
   try {
+    // Try cache first
+    if ('caches' in window) {
+      const cache  = await caches.open(CACHE_NAME);
+      const cached = await cache.match(cacheKey);
+      if (cached) {
+        const blob = await cached.blob();
+        if (blob.size > 0) {
+          const url = URL.createObjectURL(blob);
+          audioBlobURLs[filename] = url;
+          console.log('Audio loaded from cache:', filename);
+          return url;
+        }
+      }
+    }
+    // Fetch from Drive
     setNpQ(`// fetching ${filename}…`);
-    const r = await driveGet(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
+    const r    = await driveGet(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
     const blob = await r.blob();
+    // Cache it
+    if ('caches' in window) {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put(cacheKey, new Response(blob.slice(0)));
+      } catch(e) { console.warn('Audio cache write failed:', e.message); }
+    }
     const url = URL.createObjectURL(blob);
     audioBlobURLs[filename] = url;
     return url;
@@ -543,38 +566,67 @@ async function getAudioBlob(filename) {
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+const CACHE_NAME = 'accc-pdf-v1';
+
 async function loadPDF(id) {
   try {
-    // Fetch PDF as arraybuffer to avoid CORS issues
-    setMsg('Downloading PDF…');
-    const r = await driveGet(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
-    const buf = await r.arrayBuffer();
-    pdfDoc = await pdfjsLib.getDocument({data: buf}).promise;
-    totPages = pdfDoc.numPages;
+    // Get file metadata to check modification time
+    const meta = await driveJSON(
+      `https://www.googleapis.com/drive/v3/files/${id}?fields=modifiedTime,name`
+    );
+    const driveModified = meta.modifiedTime || '';
+    const cacheKey      = `pdf-${id}`;
+    const cachedMod     = localStorage.getItem(`${cacheKey}-mod`);
+    let pdfData = null;
+
+    // Try browser cache first if file hasn't changed
+    if ('caches' in window && cachedMod === driveModified) {
+      try {
+        const cache  = await caches.open(CACHE_NAME);
+        const cached = await cache.match(cacheKey);
+        if (cached) {
+          const buf = await cached.arrayBuffer();
+          if (buf.byteLength > 0) {
+            pdfData = buf;
+            setMsg('Loading PDF from cache…');
+            console.log('PDF loaded from cache');
+          }
+        }
+      } catch(e) { console.warn('Cache read failed:', e.message); }
+    }
+
+    // Fetch from Drive if no valid cache
+    if (!pdfData) {
+      setMsg(`Downloading PDF…\nFirst load only — will be cached for instant future access.`);
+      const r = await driveGet(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
+      pdfData = await r.arrayBuffer();
+      // Write to cache
+      if ('caches' in window) {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(cacheKey, new Response(pdfData.slice(0)));
+          localStorage.setItem(`${cacheKey}-mod`, driveModified);
+          console.log('PDF cached successfully');
+        } catch(e) { console.warn('Cache write failed:', e.message); }
+      }
+    }
+
+    setMsg('Rendering…');
+    pdfDoc    = await pdfjsLib.getDocument({data: pdfData}).promise;
+    totPages  = pdfDoc.numPages;
     document.getElementById('pg-total').textContent = totPages;
     hideState();
     renderPage(1);
-    // Only show calibration helper if offset hasn't been set before
-    if (!localStorage.getItem('accc_page_offset')) {
-      showOffsetHelper();
-    }
+    if (!state.pageOffset) showOffsetHelper();
   } catch(e) {
     setMsg(`PDF load error: ${e.message}`, true);
     console.error(e);
   }
 }
 
-function loadOffset() {
-  const saved = parseInt(localStorage.getItem('accc_page_offset') || '0');
-  pdfPageOffset = saved;
-  console.log('Page offset loaded:', pdfPageOffset);
-}
-
 function showOffsetHelper(manual=false) {
-  // Remove existing helper if reopening manually
   const existing = document.getElementById('offset-helper');
   if (existing) { existing.remove(); if (!manual) return; }
-
   const currentPdfPage = pdfPageOffset + 1;
   const area = document.getElementById('pdf-area');
   const helper = document.createElement('div');
@@ -595,20 +647,7 @@ function showOffsetHelper(manual=false) {
       current offset: PDF page ${currentPdfPage} = book page 1
     </div>
   `;
-  // Insert at top of pdf-area
   area.insertBefore(helper, area.firstChild);
-}
-
-function applyOffset() {
-  const val = parseInt(document.getElementById('offset-input').value) || 1;
-  pdfPageOffset = val - 1;
-  localStorage.setItem('accc_page_offset', pdfPageOffset);
-  console.log('Page offset saved:', pdfPageOffset);
-  dismissHelper();
-  // Re-jump to current lesson start page to reflect new offset
-  if (curLesson !== null) {
-    jumpPage(MANIFEST[curLesson].pages[0]);
-  }
 }
 
 function dismissHelper() {
