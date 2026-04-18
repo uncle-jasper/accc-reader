@@ -269,7 +269,7 @@
 // ── CONFIG ──
 const CLIENT_ID = '575451523934-jp5gb2tpq5avnpk7nkp5ufb4p2m3ud7g.apps.googleusercontent.com';
 const FOLDER_ID = '1R78QCS-nYdqWpFSY5mjaqDmV5lcEPr4F';
-const SCOPES    = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file';
+const REDIRECT_URI = location.href.split('?')[0].split('#')[0].replace('accc-reader.html','') + 'oauth-callback.html';
 
 // ── MANIFEST ──
 // page numbers are BOOK page numbers — offset is calculated at runtime
@@ -338,30 +338,118 @@ let audioBlobURLs={};      // cache blob URLs per filename
 const audio = document.getElementById('audio-el');
 
 // ── AUTH ──
-function signIn() {
+function signIn(prompt='consent') {
   const p = new URLSearchParams({
     client_id: CLIENT_ID,
-    redirect_uri: location.href.split('?')[0].split('#')[0],
+    redirect_uri: REDIRECT_URI,
     response_type: 'token',
     scope: SCOPES,
     include_granted_scopes: 'true',
-    prompt: 'consent'
+    prompt
   });
   location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p;
 }
+
 function signOut() {
-  // Revoke blob URLs
   Object.values(audioBlobURLs).forEach(URL.revokeObjectURL);
   token = null;
+  localStorage.removeItem('accc_token');
+  clearTimeout(silentRefreshTimer);
   document.getElementById('app').classList.remove('visible');
   document.getElementById('auth-screen').style.display = 'flex';
 }
+
 function checkAuth() {
-  if (!location.hash.includes('access_token')) return;
-  const p = new URLSearchParams(location.hash.slice(1));
-  token = p.get('access_token');
-  history.replaceState(null, '', location.pathname);
-  launch();
+  // Returning from OAuth redirect (token in hash)
+  if (location.hash.includes('access_token')) {
+    const p = new URLSearchParams(location.hash.slice(1));
+    token = p.get('access_token');
+    const expiresIn = parseInt(p.get('expires_in') || '3600');
+    localStorage.setItem('accc_token', JSON.stringify({
+      token,
+      expires: Date.now() + (expiresIn - 60) * 1000
+    }));
+    history.replaceState(null, '', location.pathname);
+    scheduleSilentRefresh(expiresIn - 60);
+    launch();
+    return;
+  }
+  // Stored token still valid
+  try {
+    const stored = JSON.parse(localStorage.getItem('accc_token') || 'null');
+    if (stored && stored.token && stored.expires > Date.now()) {
+      token = stored.token;
+      const secsRemaining = Math.floor((stored.expires - Date.now()) / 1000);
+      scheduleSilentRefresh(secsRemaining);
+      launch();
+      return;
+    }
+  } catch(e) {}
+  // No valid token — show auth screen
+}
+
+// ── SILENT RE-AUTH ──
+let silentRefreshTimer = null;
+
+function scheduleSilentRefresh(inSeconds) {
+  clearTimeout(silentRefreshTimer);
+  const ms = Math.max(inSeconds * 1000, 10000);
+  console.log(`Silent token refresh scheduled in ${Math.floor(ms/60000)} min`);
+  silentRefreshTimer = setTimeout(silentRefresh, ms);
+}
+
+function silentRefresh() {
+  console.log('Attempting silent token refresh…');
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: 'token',
+    scope: SCOPES,
+    include_granted_scopes: 'true',
+    prompt: 'none'
+  });
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = authUrl;
+  document.body.appendChild(iframe);
+
+  const handler = e => {
+    try {
+      const hash = e.data;
+      if (typeof hash === 'string' && hash.includes('access_token')) {
+        const p = new URLSearchParams(hash.replace('#',''));
+        const newToken = p.get('access_token');
+        const expiresIn = parseInt(p.get('expires_in') || '3600');
+        if (newToken) {
+          token = newToken;
+          localStorage.setItem('accc_token', JSON.stringify({
+            token,
+            expires: Date.now() + (expiresIn - 60) * 1000
+          }));
+          scheduleSilentRefresh(expiresIn - 60);
+          console.log('Silent refresh succeeded');
+        }
+      }
+    } catch(err) { console.warn('Silent refresh message error:', err); }
+    window.removeEventListener('message', handler);
+    iframe.remove();
+  };
+  window.addEventListener('message', handler);
+
+  // Fallback after 10s
+  setTimeout(() => {
+    iframe.remove();
+    window.removeEventListener('message', handler);
+    try {
+      const stored = JSON.parse(localStorage.getItem('accc_token') || 'null');
+      if (!stored || stored.expires <= Date.now()) {
+        console.log('Silent iframe failed, falling back to redirect re-auth');
+        signIn('none');
+      }
+    } catch(e) {}
+  }, 10000);
 }
 
 // ── LAUNCH ──

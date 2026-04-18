@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>auth</title></head>
+<body>
+<script>
+  // This page is loaded inside a hidden iframe during silent token refresh.
+  // It reads the token from the URL hash and posts it back to the parent window.
+  if (window.location.hash && window.location.hash.includes('access_token')) {
+    window.parent.postMessage(window.location.hash, '*');
+  } else if (window.location.search.includes('error')) {
+    window.parent.postMessage('error=' + window.location.search, '*');
+  }
+</script>
+</body>
+</html>
