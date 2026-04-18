@@ -197,6 +197,7 @@
       <div class="pdf-tb">
         <button class="tb-btn" onclick="changePage(-1)">◀ PREV</button>
         <button class="tb-btn" onclick="changePage(1)">NEXT ▶</button>
+        <button class="tb-btn" onclick="showOffsetHelper(true)" title="Page offset settings">⚙ OFFSET</button>
         <div class="pg-ind">
           PAGE <input type="number" id="pg-input" value="1" min="1" onchange="goToPage(this.value)">
           / <span id="pg-total">—</span>
@@ -458,10 +459,16 @@ async function launch() {
   document.getElementById('app').classList.add('visible');
   startClock();
   buildLessonList();
-  loadProgress();
   buildSessLog();
   await indexFiles();
-  selectLesson(0);
+  // Load unified state from Drive (authoritative) with localStorage fallback
+  await loadState();
+  // Apply progress bars to all lessons
+  MANIFEST.forEach((_,i) => updateProgressBar(i));
+  buildSessLog();
+  // Restore last lesson position
+  const startLesson = state.lastLesson || 0;
+  selectLesson(startLesson);
 }
 
 // ── DRIVE ──
@@ -537,41 +544,64 @@ async function loadPDF(id) {
     totPages = pdfDoc.numPages;
     document.getElementById('pg-total').textContent = totPages;
     hideState();
-    // Detect page offset: ask user to confirm what book page PDF page 1 shows
-    // Default to 0; user can adjust via the page input
     renderPage(1);
-    // Show offset helper after load
-    showOffsetHelper();
+    // Only show calibration helper if offset hasn't been set before
+    if (!localStorage.getItem('accc_page_offset')) {
+      showOffsetHelper();
+    }
   } catch(e) {
     setMsg(`PDF load error: ${e.message}`, true);
     console.error(e);
   }
 }
 
-function showOffsetHelper() {
+function loadOffset() {
+  const saved = parseInt(localStorage.getItem('accc_page_offset') || '0');
+  pdfPageOffset = saved;
+  console.log('Page offset loaded:', pdfPageOffset);
+}
+
+function showOffsetHelper(manual=false) {
+  // Remove existing helper if reopening manually
+  const existing = document.getElementById('offset-helper');
+  if (existing) { existing.remove(); if (!manual) return; }
+
+  const currentPdfPage = pdfPageOffset + 1;
   const area = document.getElementById('pdf-area');
   const helper = document.createElement('div');
   helper.id = 'offset-helper';
   helper.style.cssText = 'width:100%;max-width:540px;background:var(--bg2);border:1px solid var(--amber-dim);padding:14px 18px;margin:0 auto;font-size:10px;color:var(--text-dim);letter-spacing:0.08em;line-height:1.8;';
   helper.innerHTML = `
     <div style="color:var(--amber);margin-bottom:6px;letter-spacing:0.15em;">// PAGE OFFSET CALIBRATION</div>
-    What printed page number appears on PDF page 1?<br>
+    What PDF page number does book page 1 appear on?<br>
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-      <span>Book page 1 is PDF page:</span>
-      <input type="number" id="offset-input" value="1" min="1"
-        style="background:var(--bg3);border:1px solid var(--border);color:var(--amber);font-family:var(--mono);font-size:10px;width:44px;text-align:center;padding:2px 4px;"
-        onchange="setOffset(this.value)">
-      <button onclick="dismissHelper()" style="background:none;border:1px solid var(--green-dim);color:var(--green);font-family:var(--mono);font-size:9px;padding:3px 10px;cursor:pointer;letter-spacing:0.09em;">DONE</button>
+      <span>Book page 1 = PDF page:</span>
+      <input type="number" id="offset-input" value="${currentPdfPage}" min="1"
+        style="background:var(--bg3);border:1px solid var(--border);color:var(--amber);font-family:var(--mono);font-size:10px;width:44px;text-align:center;padding:2px 4px;">
+      <button onclick="applyOffset()" style="background:none;border:1px solid var(--green-dim);color:var(--green);font-family:var(--mono);font-size:9px;padding:3px 10px;cursor:pointer;letter-spacing:0.09em;">APPLY</button>
+      <button onclick="dismissHelper()" style="background:none;border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:9px;padding:3px 10px;cursor:pointer;letter-spacing:0.09em;">CANCEL</button>
     </div>
-    <div style="margin-top:6px;font-size:9px;color:var(--text-faint);">e.g. if PDF page 1 is the cover and book page 1 starts on PDF page 9, enter 9</div>
+    <div style="margin-top:6px;font-size:9px;color:var(--text-faint);">
+      e.g. if the PDF has 8 pages of front matter before book page 1, enter 9<br>
+      current offset: PDF page ${currentPdfPage} = book page 1
+    </div>
   `;
-  area.appendChild(helper);
+  // Insert at top of pdf-area
+  area.insertBefore(helper, area.firstChild);
 }
-function setOffset(v) {
-  // pdfPageOffset = (PDF page number where book page 1 appears) - 1
-  pdfPageOffset = (parseInt(v) || 1) - 1;
-  console.log('Page offset set to:', pdfPageOffset);
+
+function applyOffset() {
+  const val = parseInt(document.getElementById('offset-input').value) || 1;
+  pdfPageOffset = val - 1;
+  localStorage.setItem('accc_page_offset', pdfPageOffset);
+  console.log('Page offset saved:', pdfPageOffset);
+  dismissHelper();
+  // Re-jump to current lesson start page to reflect new offset
+  if (curLesson !== null) {
+    jumpPage(MANIFEST[curLesson].pages[0]);
+  }
 }
+
 function dismissHelper() {
   const h = document.getElementById('offset-helper');
   if (h) h.remove();
@@ -671,6 +701,8 @@ function selectLesson(idx) {
   try {
     curLesson = idx;
     curTrack = null;
+    state.lastLesson = idx;
+    saveState();
     const L = MANIFEST[idx];
 
     document.querySelectorAll('.li').forEach((el,i) => el.classList.toggle('active', i===idx));
@@ -875,37 +907,119 @@ function buildChecklist(L, lessonIdx) {
   updateProgressBar(lessonIdx);
 }
 
-// ── PROGRESS ──
-function loadProgress() {
-  try { progress = JSON.parse(localStorage.getItem('accc-progress') || '{}'); } catch(e) {}
+// ── UNIFIED STATE ──
+// Single state object synced to Drive as state.json
+// Structure:
+// {
+//   version: 1,
+//   lastUpdated: timestamp,
+//   pageOffset: number,
+//   lastLesson: number,
+//   sessionLog: [...],
+//   lessons: {
+//     "0": { checked: [bool,...], notes: { lesson: "...", t0: "...", t1: "..." } },
+//     ...
+//   }
+// }
+
+let state = {
+  version: 1,
+  lastUpdated: 0,
+  pageOffset: 0,
+  lastLesson: 0,
+  sessionLog: [],
+  lessons: {}
+};
+let syncDebounceTimer = null;
+let syncStatus = 'idle'; // idle | syncing | error
+
+function defaultState() {
+  return { version:1, lastUpdated:0, pageOffset:0, lastLesson:0, sessionLog:[], lessons:{} };
 }
-function saveProgress() {
-  localStorage.setItem('accc-progress', JSON.stringify(progress));
-  syncToDrive();
-}
-async function syncToDrive() {
-  const body = JSON.stringify(progress, null, 2);
+
+// Load state: Drive is authoritative, localStorage is fallback/cache
+async function loadState() {
+  // First load from localStorage as immediate fallback
   try {
-    const id = driveFiles['progress.json'];
+    const local = JSON.parse(localStorage.getItem('accc_state') || 'null');
+    if (local) state = { ...defaultState(), ...local };
+  } catch(e) {}
+
+  // Then try Drive — overwrite if Drive is newer
+  try {
+    const id = driveFiles['state.json'];
+    if (id) {
+      const r = await driveGet(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
+      const remote = await r.json();
+      if (remote && remote.lastUpdated >= (state.lastUpdated || 0)) {
+        state = { ...defaultState(), ...remote };
+        // Write back to localStorage so next load is fast
+        localStorage.setItem('accc_state', JSON.stringify(state));
+        console.log('State loaded from Drive, last updated:', new Date(state.lastUpdated).toLocaleString());
+      } else {
+        console.log('Local state is newer, keeping local');
+      }
+    } else {
+      console.log('No state.json in Drive yet — will create on first save');
+    }
+  } catch(e) {
+    console.warn('Could not load state from Drive, using local:', e.message);
+  }
+
+  // Apply loaded state to app
+  pdfPageOffset = state.pageOffset || 0;
+  progress = state.lessons || {};
+}
+
+// Save state: debounced, writes to both localStorage and Drive
+function saveState() {
+  state.lastUpdated = Date.now();
+  state.lessons = progress;
+  state.pageOffset = pdfPageOffset;
+  state.sessionLog = sessLog;
+  if (curLesson !== null) state.lastLesson = curLesson;
+
+  // Write to localStorage immediately
+  localStorage.setItem('accc_state', JSON.stringify(state));
+
+  // Debounce Drive writes — don't hammer Drive on every keystroke
+  clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(pushStateToDrive, 2000);
+}
+
+async function pushStateToDrive() {
+  syncStatus = 'syncing';
+  const body = JSON.stringify(state, null, 2);
+  try {
+    const id = driveFiles['state.json'];
     if (id) {
       await fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
         body
       });
     } else {
-      const meta = JSON.stringify({name:'progress.json', parents:[FOLDER_ID]});
+      const meta = JSON.stringify({name:'state.json', parents:[FOLDER_ID]});
       const form = new FormData();
       form.append('metadata', new Blob([meta], {type:'application/json'}));
       form.append('file', new Blob([body], {type:'application/json'}));
       const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form
+        method:'POST', headers:{Authorization:`Bearer ${token}`}, body:form
       });
       const nf = await r.json();
-      driveFiles['progress.json'] = nf.id;
+      driveFiles['state.json'] = nf.id;
     }
-  } catch(e) { console.warn('Progress sync failed:', e); }
+    syncStatus = 'idle';
+    console.log('State synced to Drive at', new Date().toLocaleTimeString());
+  } catch(e) {
+    syncStatus = 'error';
+    console.warn('Drive sync failed:', e.message);
+  }
 }
+
+// ── PROGRESS (now thin wrappers over state) ──
+function loadProgress() {} // no-op — handled by loadState
+function saveProgress() { saveState(); }
 function updateProgressBar(li) {
   const L = MANIFEST[li];
   if (!L.tracks.length) return;
@@ -913,6 +1027,19 @@ function updateProgressBar(li) {
   const pct = (saved.filter(Boolean).length / L.tracks.length) * 100;
   const f = document.getElementById(`lf-${li}`);
   if (f) f.style.width = pct + '%';
+}
+
+// ── OFFSET (now part of state) ──
+function loadOffset() {
+  pdfPageOffset = state.pageOffset || 0;
+}
+function applyOffset() {
+  const val = parseInt(document.getElementById('offset-input').value) || 1;
+  pdfPageOffset = val - 1;
+  saveState();
+  console.log('Page offset saved:', pdfPageOffset);
+  dismissHelper();
+  if (curLesson !== null) jumpPage(MANIFEST[curLesson].pages[0]);
 }
 
 // ── NOTES ──
@@ -926,7 +1053,7 @@ function saveNote() {
   if (!progress[curLesson]) progress[curLesson] = {checked:[], notes:{}};
   if (!progress[curLesson].notes) progress[curLesson].notes = {};
   progress[curLesson].notes[k] = v;
-  saveProgress();
+  saveState();
   logSess();
   document.getElementById('nmsg').textContent = '// saved ' +
     new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', hour12:false});
@@ -937,12 +1064,14 @@ function logSess() {
   const L = MANIFEST[curLesson];
   const lbl = `L${L.lesson}${curTrack !== null ? ' · ' + L.tracks[curTrack]?.zh : ''}`;
   const time = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric'});
-  sessLog = [{lbl, time}, ...sessLog.filter(e => e.lbl !== lbl)].slice(0, 5);
-  localStorage.setItem('accc-sesslog', JSON.stringify(sessLog));
+  sessLog = [{lbl, time}, ...sessLog.filter(e => e.lbl !== lbl)].slice(0, 8);
+  saveState();
   buildSessLog();
 }
 function buildSessLog() {
-  try { sessLog = JSON.parse(localStorage.getItem('accc-sesslog') || '[]'); } catch(e) {}
+  // Prefer state.sessionLog if loaded, else localStorage fallback
+  if (state.sessionLog?.length) sessLog = state.sessionLog;
+  else { try { sessLog = JSON.parse(localStorage.getItem('accc-sesslog') || '[]'); } catch(e) {} }
   document.getElementById('sess-entries').innerHTML = sessLog.length
     ? sessLog.map(e => `<div class="se"><span>${e.lbl}</span><span class="se-t">${e.time}</span></div>`).join('')
     : `<div class="se"><span style="color:var(--text-faint)">// no sessions yet</span></div>`;
