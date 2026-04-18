@@ -156,6 +156,33 @@
   .nsave:hover{background:var(--green-dim);}
   .nmsg{font-size:9px;color:var(--text-faint);letter-spacing:0.07em;}
 
+  /* DICTIONARY */
+  .dict-search{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg3);flex-shrink:0;}
+  #dict-input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:14px;padding:5px 8px;outline:none;transition:border-color 0.15s;}
+  #dict-input:focus{border-color:var(--amber);}
+  #dict-input::placeholder{font-family:var(--mono);font-size:10px;color:var(--text-faint);}
+  .dict-clear{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:11px;padding:4px;transition:color 0.12s;}
+  .dict-clear:hover{color:var(--text);}
+  .dict-results{flex:1;overflow-y:auto;padding:0;}
+  .dict-hint{padding:20px 14px;font-size:9px;color:var(--text-faint);letter-spacing:0.09em;line-height:1.9;}
+  .dict-entry{padding:10px 14px;border-bottom:1px solid var(--text-faint);transition:background 0.1s;}
+  .dict-entry:hover{background:var(--bg3);}
+  .dict-entry-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+  .dict-zh{font-family:var(--sans);font-size:20px;color:var(--text);}
+  .dict-py{font-size:11px;color:var(--amber);letter-spacing:0.03em;}
+  .dict-def{font-size:10px;color:var(--text-dim);line-height:1.7;}
+  .dict-def-item{padding:1px 0;}
+  .dict-def-item::before{content:'· ';color:var(--text-faint);}
+  .dict-no-result{padding:16px 14px;font-size:10px;color:var(--text-faint);letter-spacing:0.09em;}
+
+  /* PDF text layer + selection popup */
+  .pdf-cv-wrap{position:relative;}
+  .textLayer{position:absolute;top:0;left:0;right:0;bottom:0;overflow:hidden;opacity:0;line-height:1;}
+  .textLayer span{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%;}
+  .textLayer ::selection{background:rgba(61,158,95,0.35);}
+  .dict-popup{position:fixed;background:var(--bg2);border:1px solid var(--green);padding:5px 10px;font-size:9px;font-family:var(--mono);color:var(--green-bright);letter-spacing:0.1em;cursor:pointer;z-index:9998;display:none;transition:opacity 0.15s;}
+  .dict-popup:hover{background:var(--green-dim);}
+
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:var(--bg);}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
@@ -250,6 +277,7 @@
         <button class="ptab active" onclick="switchPanel('audio')">TRACKS</button>
         <button class="ptab" onclick="switchPanel('vocab')">詞彙</button>
         <button class="ptab" onclick="switchPanel('notes')">NOTES</button>
+        <button class="ptab" onclick="switchPanel('dict')">查</button>
       </div>
 
       <div class="panel active" id="panel-audio">
@@ -265,11 +293,21 @@
           <button class="nsave" onclick="saveNote()">SAVE</button>
         </div>
       </div>
+      <div class="panel" id="panel-dict">
+        <div class="dict-search">
+          <input type="text" id="dict-input" placeholder="// paste or type Chinese…" oninput="dictLookup(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+          <button onclick="dictClear()" class="dict-clear">✕</button>
+        </div>
+        <div id="dict-results" class="dict-results">
+          <div class="dict-hint">// select text in the PDF or type here<br>// powered by CC-CEDICT</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <audio id="audio-el" preload="none"></audio>
+<div class="dict-popup" id="dict-popup" onclick="popupLookup()">查 lookup</div>
 
 <script>
 // ── CONFIG ──
@@ -657,13 +695,11 @@ function dismissHelper() {
 
 async function renderPage(bookPageOrPdfPage, isPdfPage=false) {
   if (!pdfDoc) return;
-  // Convert book page to PDF page
   const pdfPage = isPdfPage ? bookPageOrPdfPage : bookPageOrPdfPage + pdfPageOffset;
   const n = Math.max(1, Math.min(totPages, pdfPage));
   curPage = n;
   document.getElementById('pg-input').value = n - pdfPageOffset || n;
 
-  // Cancel any in-progress render
   if (renderTask) {
     try { renderTask.cancel(); } catch(e) {}
     renderTask = null;
@@ -682,24 +718,42 @@ async function renderPage(bookPageOrPdfPage, isPdfPage=false) {
       wrap = document.createElement('div');
       wrap.id = 'pdf-cv-wrap';
       wrap.className = 'pdf-cv-wrap';
-      // Insert before any checklist
       const cl = document.getElementById('cl-wrap');
       if (cl) area.insertBefore(wrap, cl);
       else area.appendChild(wrap);
     }
 
-    // Always use a fresh canvas to avoid "same canvas" errors
     const canvas = document.createElement('canvas');
     canvas.width = vp.width;
     canvas.height = vp.height;
-    wrap.style.width = vp.width + 'px';
+    wrap.style.width  = vp.width  + 'px';
     wrap.style.height = vp.height + 'px';
     wrap.innerHTML = '';
     wrap.appendChild(canvas);
 
+    // Render canvas
     renderTask = page.render({canvasContext: canvas.getContext('2d'), viewport: vp});
     await renderTask.promise;
     renderTask = null;
+
+    // Render text layer for selection
+    try {
+      const textContent = await page.getTextContent();
+      const textLayerDiv = document.createElement('div');
+      textLayerDiv.className = 'textLayer';
+      textLayerDiv.style.width  = vp.width  + 'px';
+      textLayerDiv.style.height = vp.height + 'px';
+      wrap.appendChild(textLayerDiv);
+      await pdfjsLib.renderTextLayer({
+        textContentSource: textContent,
+        container: textLayerDiv,
+        viewport: vp,
+        textDivs: [],
+      }).promise;
+    } catch(e) {
+      console.warn('Text layer failed (non-critical):', e.message);
+    }
+
   } catch(e) {
     if (e.name !== 'RenderingCancelledException') console.error('Render error:', e);
     renderTask = null;
@@ -1127,14 +1181,144 @@ function buildSessLog() {
 
 // ── PANELS ──
 function switchPanel(n) {
-  ['audio','vocab','notes'].forEach((p,i) => {
-    document.querySelectorAll('.ptab')[i].classList.toggle('active', p===n);
-    const el = document.getElementById('panel-'+p);
-    el.classList.toggle('active', p===n);
-    el.style.display = p===n ? 'flex' : 'none';
+  const panels = ['audio','vocab','notes','dict'];
+  document.querySelectorAll('.ptab').forEach((t,i) => t.classList.toggle('active', panels[i]===n));
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.remove('active');
+    p.style.display = 'none';
   });
+  const el = document.getElementById('panel-'+n);
+  if (el) { el.classList.add('active'); el.style.display = 'flex'; }
 }
 document.querySelectorAll('.panel').forEach(p => { if (!p.classList.contains('active')) p.style.display='none'; });
+
+// ── DICTIONARY (CC-CEDICT via MDBG API) ──
+let cedict = null; // lazy-loaded
+
+// We use the free MDBG API — no key needed, returns JSON
+async function dictLookup(query) {
+  query = (query || '').trim();
+  const results = document.getElementById('dict-results');
+  if (!query) {
+    results.innerHTML = '<div class="dict-hint">// paste or type Chinese…<br>// powered by CC-CEDICT</div>';
+    return;
+  }
+  // Only look up if there's at least one CJK character
+  if (!/[\u4e00-\u9fff\u3400-\u4dbf]/.test(query)) {
+    results.innerHTML = '<div class="dict-no-result">// enter Chinese characters to look up</div>';
+    return;
+  }
+  results.innerHTML = '<div class="dict-hint">// looking up…</div>';
+  try {
+    // Use MDBG's free JSON endpoint
+    const url = `https://www.mdbg.net/chinese/dictionary?page=1&pagesize=5&wdrst=0&wdqb=${encodeURIComponent(query)}&format=json`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('MDBG unreachable');
+    const data = await r.json();
+    renderDictResults(data, query);
+  } catch(e) {
+    // Fallback: link out to MDBG
+    results.innerHTML = `
+      <div class="dict-no-result">
+        // lookup unavailable offline<br><br>
+        <a href="https://www.mdbg.net/chinese/dictionary?wdqb=${encodeURIComponent(query)}"
+           target="_blank"
+           style="color:var(--amber);letter-spacing:0.08em;">
+          ▸ open in MDBG ↗
+        </a>
+      </div>`;
+    console.warn('Dict lookup failed:', e.message);
+  }
+}
+
+function renderDictResults(data, query) {
+  const results = document.getElementById('dict-results');
+  const words = data?.data?.dict?.worddict;
+  if (!words || !words.length) {
+    results.innerHTML = `
+      <div class="dict-no-result">
+        // no results for "${query}"<br><br>
+        <a href="https://www.mdbg.net/chinese/dictionary?wdqb=${encodeURIComponent(query)}"
+           target="_blank"
+           style="color:var(--amber);letter-spacing:0.08em;">
+          ▸ try MDBG directly ↗
+        </a>
+      </div>`;
+    return;
+  }
+  results.innerHTML = words.slice(0, 6).map(w => {
+    const trad  = w.simplified || w.traditional || '';
+    const simp  = w.simplified || '';
+    const pinyin = w.pinyin || '';
+    const defs  = (w.definitions || []).slice(0, 5);
+    const headDisplay = trad !== simp && simp
+      ? `${trad} <span style="font-size:14px;color:var(--text-dim)">${simp}</span>`
+      : trad;
+    return `
+      <div class="dict-entry">
+        <div class="dict-entry-head">
+          <span class="dict-zh">${headDisplay}</span>
+          <span class="dict-py">${pinyin}</span>
+        </div>
+        <div class="dict-def">
+          ${defs.map(d => `<div class="dict-def-item">${d}</div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function dictClear() {
+  document.getElementById('dict-input').value = '';
+  document.getElementById('dict-results').innerHTML =
+    '<div class="dict-hint">// paste or type Chinese…<br>// powered by CC-CEDICT</div>';
+}
+
+// ── PDF TEXT SELECTION → POPUP ──
+let popupWord = '';
+
+document.addEventListener('mouseup', e => {
+  const popup = document.getElementById('dict-popup');
+  // Dismiss if clicking the popup itself (handled by popupLookup)
+  if (e.target === popup || popup.contains(e.target)) return;
+
+  setTimeout(() => {
+    const sel = window.getSelection();
+    const text = sel?.toString().trim();
+
+    if (!text || !/[\u4e00-\u9fff\u3400-\u4dbf]/.test(text)) {
+      popup.style.display = 'none';
+      return;
+    }
+
+    // Only show popup if selection is inside the PDF area
+    const range = sel.getRangeAt(0);
+    const pdfArea = document.getElementById('pdf-area');
+    if (!pdfArea.contains(range.commonAncestorContainer)) {
+      popup.style.display = 'none';
+      return;
+    }
+
+    popupWord = text;
+    popup.style.display = 'block';
+    popup.style.left = Math.min(e.clientX, window.innerWidth - 120) + 'px';
+    popup.style.top  = (e.clientY - 36) + 'px';
+  }, 10);
+});
+
+document.addEventListener('mousedown', e => {
+  const popup = document.getElementById('dict-popup');
+  if (e.target !== popup && !popup.contains(e.target)) {
+    popup.style.display = 'none';
+  }
+});
+
+function popupLookup() {
+  document.getElementById('dict-popup').style.display = 'none';
+  document.getElementById('dict-input').value = popupWord;
+  switchPanel('dict');
+  dictLookup(popupWord);
+  window.getSelection()?.removeAllRanges();
+}
 
 // ── CLOCK ──
 function startClock() {
