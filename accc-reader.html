@@ -90,6 +90,7 @@
   .cl-code{font-size:9px;color:var(--amber-dim);}
 
   .sr{border-left:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
+  .np{padding:13px 14px;border-bottom:1px solid var(--border);background:var(--bg3);flex-shrink:0;}
   .ptabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;}
   .ptab{flex:1;padding:8px 4px;font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);cursor:pointer;text-align:center;border:none;border-right:1px solid var(--border);border-bottom:2px solid transparent;font-family:var(--mono);background:none;transition:all 0.12s;}
   .ptab:last-child{border-right:none;}
@@ -212,42 +213,46 @@
     </div>
 
     <div class="sr">
+      <!-- Persistent player — always visible regardless of active panel -->
+      <div class="np">
+        <div class="np-lbl">// now playing</div>
+        <div class="np-title" id="np-title"><span class="zh">—</span></div>
+        <div class="np-q" id="np-q">// select a section to begin</div>
+        <div class="waveform" id="waveform">
+          <div class="wb" style="height:4px"></div><div class="wb" style="height:13px"></div>
+          <div class="wb" style="height:7px"></div><div class="wb" style="height:18px"></div>
+          <div class="wb" style="height:5px"></div><div class="wb" style="height:20px"></div>
+          <div class="wb" style="height:9px"></div><div class="wb" style="height:15px"></div>
+          <div class="wb" style="height:4px"></div><div class="wb" style="height:19px"></div>
+          <div class="wb" style="height:8px"></div><div class="wb" style="height:13px"></div>
+          <div class="wb" style="height:5px"></div><div class="wb" style="height:17px"></div>
+          <div class="wb" style="height:10px"></div><div class="wb" style="height:6px"></div>
+          <div class="wb" style="height:21px"></div><div class="wb" style="height:11px"></div>
+          <div class="wb" style="height:4px"></div><div class="wb" style="height:16px"></div>
+        </div>
+        <div class="prog" id="prog" onclick="seekAudio(event,this)"><div class="prog-fill" id="prog-fill"></div></div>
+        <div class="time-row"><span id="t-cur">0:00</span><span id="t-tot">0:00</span></div>
+        <div class="transport">
+          <button class="tr-btn" onclick="replay10()" title="Replay 10s">↺<span class="rpl">10</span></button>
+          <button class="tr-btn play" id="play-btn" onclick="togglePlay()">▶</button>
+          <button class="tr-btn" onclick="nextTrack()">▶▶</button>
+          <div class="speeds">
+            <button class="spd" onclick="setSpeed(0.5,this)">×.5</button>
+            <button class="spd" onclick="setSpeed(0.75,this)">×.75</button>
+            <button class="spd active" onclick="setSpeed(1,this)">×1</button>
+            <button class="spd" onclick="setSpeed(1.25,this)">×1.25</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs sit below the persistent player -->
       <div class="ptabs">
-        <button class="ptab active" onclick="switchPanel('audio')">AUDIO</button>
+        <button class="ptab active" onclick="switchPanel('audio')">TRACKS</button>
         <button class="ptab" onclick="switchPanel('vocab')">詞彙</button>
         <button class="ptab" onclick="switchPanel('notes')">NOTES</button>
       </div>
+
       <div class="panel active" id="panel-audio">
-        <div class="np">
-          <div class="np-lbl">// now playing</div>
-          <div class="np-title" id="np-title"><span class="zh">—</span></div>
-          <div class="np-q" id="np-q">// select a section to begin</div>
-          <div class="waveform" id="waveform">
-            <div class="wb" style="height:4px"></div><div class="wb" style="height:13px"></div>
-            <div class="wb" style="height:7px"></div><div class="wb" style="height:18px"></div>
-            <div class="wb" style="height:5px"></div><div class="wb" style="height:20px"></div>
-            <div class="wb" style="height:9px"></div><div class="wb" style="height:15px"></div>
-            <div class="wb" style="height:4px"></div><div class="wb" style="height:19px"></div>
-            <div class="wb" style="height:8px"></div><div class="wb" style="height:13px"></div>
-            <div class="wb" style="height:5px"></div><div class="wb" style="height:17px"></div>
-            <div class="wb" style="height:10px"></div><div class="wb" style="height:6px"></div>
-            <div class="wb" style="height:21px"></div><div class="wb" style="height:11px"></div>
-            <div class="wb" style="height:4px"></div><div class="wb" style="height:16px"></div>
-          </div>
-          <div class="prog" id="prog" onclick="seekAudio(event,this)"><div class="prog-fill" id="prog-fill"></div></div>
-          <div class="time-row"><span id="t-cur">0:00</span><span id="t-tot">0:00</span></div>
-          <div class="transport">
-            <button class="tr-btn" onclick="replay10()" title="Replay 10s">↺<span class="rpl">10</span></button>
-            <button class="tr-btn play" id="play-btn" onclick="togglePlay()">▶</button>
-            <button class="tr-btn" onclick="nextTrack()">▶▶</button>
-            <div class="speeds">
-              <button class="spd" onclick="setSpeed(0.5,this)">×.5</button>
-              <button class="spd" onclick="setSpeed(0.75,this)">×.75</button>
-              <button class="spd active" onclick="setSpeed(1,this)">×1</button>
-              <button class="spd" onclick="setSpeed(1.25,this)">×1.25</button>
-            </div>
-          </div>
-        </div>
         <div class="tl-lbl" id="tl-lbl">// select a lesson</div>
         <div id="track-list"></div>
       </div>
