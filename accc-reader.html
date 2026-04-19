@@ -174,14 +174,16 @@
   .dict-def-item{padding:1px 0;}
   .dict-def-item::before{content:'· ';color:var(--text-faint);}
   .dict-no-result{padding:16px 14px;font-size:10px;color:var(--text-faint);letter-spacing:0.09em;}
+  .dict-history-label{font-size:9px;letter-spacing:0.17em;color:var(--text-faint);padding:9px 14px 5px;text-transform:uppercase;border-bottom:1px solid var(--text-faint);}
+  .dict-history-item{padding:6px 14px;border-bottom:1px solid var(--text-faint);cursor:pointer;display:flex;align-items:center;gap:8px;transition:background 0.1s;}
+  .dict-history-item:hover{background:var(--bg3);}
+  .dict-history-zh{font-family:var(--sans);font-size:14px;color:var(--text-dim);}
+  .dict-history-py{font-size:9px;color:var(--amber-dim);}
 
-  /* PDF text layer + selection popup */
-  .pdf-cv-wrap{position:relative;}
-  .textLayer{position:absolute;top:0;left:0;right:0;bottom:0;overflow:hidden;opacity:0;line-height:1;}
-  .textLayer span{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%;}
-  .textLayer ::selection{background:rgba(61,158,95,0.35);}
-  .dict-popup{position:fixed;background:var(--bg2);border:1px solid var(--green);padding:5px 10px;font-size:9px;font-family:var(--mono);color:var(--green-bright);letter-spacing:0.1em;cursor:pointer;z-index:9998;display:none;transition:opacity 0.15s;}
-  .dict-popup:hover{background:var(--green-dim);}
+  /* Right-click context menu */
+  .ctx-menu{position:fixed;background:var(--bg2);border:1px solid var(--border);z-index:9998;display:none;min-width:140px;}
+  .ctx-item{padding:7px 14px;font-size:10px;color:var(--text-dim);cursor:pointer;letter-spacing:0.08em;transition:background 0.1s;}
+  .ctx-item:hover{background:var(--bg3);color:var(--green-bright);}
 
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:var(--bg);}
@@ -295,11 +297,11 @@
       </div>
       <div class="panel" id="panel-dict">
         <div class="dict-search">
-          <input type="text" id="dict-input" placeholder="// paste or type Chinese…" oninput="dictLookup(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+          <input type="text" id="dict-input" placeholder="// type Chinese to look up…" oninput="dictLookup(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
           <button onclick="dictClear()" class="dict-clear">✕</button>
         </div>
         <div id="dict-results" class="dict-results">
-          <div class="dict-hint">// select text in the PDF or type here<br>// powered by CC-CEDICT</div>
+          <div class="dict-hint">// type or paste a Chinese word above<br>// right-click the PDF to open here<br>// powered by CC-CEDICT / MDBG</div>
         </div>
       </div>
     </div>
@@ -307,7 +309,9 @@
 </div>
 
 <audio id="audio-el" preload="none"></audio>
-<div class="dict-popup" id="dict-popup" onclick="popupLookup()">查 lookup</div>
+<div class="ctx-menu" id="ctx-menu">
+  <div class="ctx-item" onclick="ctxLookup()">查 Look up word</div>
+</div>
 
 <script>
 // ── CONFIG ──
@@ -735,24 +739,6 @@ async function renderPage(bookPageOrPdfPage, isPdfPage=false) {
     renderTask = page.render({canvasContext: canvas.getContext('2d'), viewport: vp});
     await renderTask.promise;
     renderTask = null;
-
-    // Render text layer for selection
-    try {
-      const textContent = await page.getTextContent();
-      const textLayerDiv = document.createElement('div');
-      textLayerDiv.className = 'textLayer';
-      textLayerDiv.style.width  = vp.width  + 'px';
-      textLayerDiv.style.height = vp.height + 'px';
-      wrap.appendChild(textLayerDiv);
-      await pdfjsLib.renderTextLayer({
-        textContentSource: textContent,
-        container: textLayerDiv,
-        viewport: vp,
-        textDivs: [],
-      }).promise;
-    } catch(e) {
-      console.warn('Text layer failed (non-critical):', e.message);
-    }
 
   } catch(e) {
     if (e.name !== 'RenderingCancelledException') console.error('Render error:', e);
@@ -1189,46 +1175,59 @@ function switchPanel(n) {
   });
   const el = document.getElementById('panel-'+n);
   if (el) { el.classList.add('active'); el.style.display = 'flex'; }
+  if (n === 'dict') {
+    const inp = document.getElementById('dict-input');
+    if (!inp.value) renderDictHome();
+    setTimeout(() => inp.focus(), 50);
+  }
 }
 document.querySelectorAll('.panel').forEach(p => { if (!p.classList.contains('active')) p.style.display='none'; });
 
-// ── DICTIONARY (CC-CEDICT via MDBG API) ──
-let cedict = null; // lazy-loaded
+// ── DICTIONARY ──
+let dictHistory = [];
 
-// We use the free MDBG API — no key needed, returns JSON
-async function dictLookup(query) {
+function dictLookup(query) {
   query = (query || '').trim();
   const results = document.getElementById('dict-results');
   if (!query) {
-    results.innerHTML = '<div class="dict-hint">// paste or type Chinese…<br>// powered by CC-CEDICT</div>';
+    renderDictHome();
     return;
   }
-  // Only look up if there's at least one CJK character
   if (!/[\u4e00-\u9fff\u3400-\u4dbf]/.test(query)) {
     results.innerHTML = '<div class="dict-no-result">// enter Chinese characters to look up</div>';
     return;
   }
   results.innerHTML = '<div class="dict-hint">// looking up…</div>';
-  try {
-    // Use MDBG's free JSON endpoint
-    const url = `https://www.mdbg.net/chinese/dictionary?page=1&pagesize=5&wdrst=0&wdqb=${encodeURIComponent(query)}&format=json`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('MDBG unreachable');
-    const data = await r.json();
-    renderDictResults(data, query);
-  } catch(e) {
-    // Fallback: link out to MDBG
-    results.innerHTML = `
-      <div class="dict-no-result">
-        // lookup unavailable offline<br><br>
-        <a href="https://www.mdbg.net/chinese/dictionary?wdqb=${encodeURIComponent(query)}"
-           target="_blank"
-           style="color:var(--amber);letter-spacing:0.08em;">
-          ▸ open in MDBG ↗
-        </a>
-      </div>`;
-    console.warn('Dict lookup failed:', e.message);
+
+  // Add to history
+  dictHistory = [query, ...dictHistory.filter(h => h !== query)].slice(0, 8);
+
+  const url = `https://www.mdbg.net/chinese/dictionary?page=1&pagesize=6&wdrst=0&wdqb=${encodeURIComponent(query)}&format=json`;
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error('API error'); return r.json(); })
+    .then(data => renderDictResults(data, query))
+    .catch(() => {
+      results.innerHTML = `
+        <div class="dict-no-result">
+          // API unreachable<br><br>
+          <a href="https://www.mdbg.net/chinese/dictionary?wdqb=${encodeURIComponent(query)}"
+             target="_blank" style="color:var(--amber);letter-spacing:0.08em;">▸ open MDBG ↗</a>
+        </div>`;
+    });
+}
+
+function renderDictHome() {
+  const results = document.getElementById('dict-results');
+  if (!dictHistory.length) {
+    results.innerHTML = '<div class="dict-hint">// type a Chinese word or character<br>// right-click PDF to look up<br>// powered by CC-CEDICT / MDBG</div>';
+    return;
   }
+  results.innerHTML = `
+    <div class="dict-history-label">// recent lookups</div>
+    ${dictHistory.map(w => `
+      <div class="dict-history-item" onclick="document.getElementById('dict-input').value='${w}';dictLookup('${w}')">
+        <span class="dict-history-zh">${w}</span>
+      </div>`).join('')}`;
 }
 
 function renderDictResults(data, query) {
@@ -1239,29 +1238,26 @@ function renderDictResults(data, query) {
       <div class="dict-no-result">
         // no results for "${query}"<br><br>
         <a href="https://www.mdbg.net/chinese/dictionary?wdqb=${encodeURIComponent(query)}"
-           target="_blank"
-           style="color:var(--amber);letter-spacing:0.08em;">
-          ▸ try MDBG directly ↗
-        </a>
+           target="_blank" style="color:var(--amber);letter-spacing:0.08em;">▸ try MDBG ↗</a>
       </div>`;
     return;
   }
   results.innerHTML = words.slice(0, 6).map(w => {
-    const trad  = w.simplified || w.traditional || '';
-    const simp  = w.simplified || '';
+    const trad   = w.traditional || w.simplified || '';
+    const simp   = w.simplified  || '';
     const pinyin = w.pinyin || '';
-    const defs  = (w.definitions || []).slice(0, 5);
-    const headDisplay = trad !== simp && simp
+    const defs   = (w.definitions || []).slice(0, 5);
+    const head   = trad !== simp && simp
       ? `${trad} <span style="font-size:14px;color:var(--text-dim)">${simp}</span>`
       : trad;
     return `
       <div class="dict-entry">
         <div class="dict-entry-head">
-          <span class="dict-zh">${headDisplay}</span>
+          <span class="dict-zh">${head}</span>
           <span class="dict-py">${pinyin}</span>
         </div>
-        <div class="dict-def">
-          ${defs.map(d => `<div class="dict-def-item">${d}</div>`).join('')}
+        <div class="dict-def">${defs.map(d =>
+          `<div class="dict-def-item">${d}</div>`).join('')}
         </div>
       </div>`;
   }).join('');
@@ -1269,55 +1265,35 @@ function renderDictResults(data, query) {
 
 function dictClear() {
   document.getElementById('dict-input').value = '';
-  document.getElementById('dict-results').innerHTML =
-    '<div class="dict-hint">// paste or type Chinese…<br>// powered by CC-CEDICT</div>';
+  renderDictHome();
 }
 
-// ── PDF TEXT SELECTION → POPUP ──
-let popupWord = '';
+// ── CONTEXT MENU (right-click on PDF) ──
+let ctxWord = '';
 
-document.addEventListener('mouseup', e => {
-  const popup = document.getElementById('dict-popup');
-  // Dismiss if clicking the popup itself (handled by popupLookup)
-  if (e.target === popup || popup.contains(e.target)) return;
-
-  setTimeout(() => {
-    const sel = window.getSelection();
-    const text = sel?.toString().trim();
-
-    if (!text || !/[\u4e00-\u9fff\u3400-\u4dbf]/.test(text)) {
-      popup.style.display = 'none';
-      return;
-    }
-
-    // Only show popup if selection is inside the PDF area
-    const range = sel.getRangeAt(0);
-    const pdfArea = document.getElementById('pdf-area');
-    if (!pdfArea.contains(range.commonAncestorContainer)) {
-      popup.style.display = 'none';
-      return;
-    }
-
-    popupWord = text;
-    popup.style.display = 'block';
-    popup.style.left = Math.min(e.clientX, window.innerWidth - 120) + 'px';
-    popup.style.top  = (e.clientY - 36) + 'px';
-  }, 10);
+document.getElementById('pdf-area').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const menu = document.getElementById('ctx-menu');
+  // Position menu near cursor, keep in viewport
+  const x = Math.min(e.clientX, window.innerWidth  - 160);
+  const y = Math.min(e.clientY, window.innerHeight - 80);
+  menu.style.left    = x + 'px';
+  menu.style.top     = y + 'px';
+  menu.style.display = 'block';
 });
 
-document.addEventListener('mousedown', e => {
-  const popup = document.getElementById('dict-popup');
-  if (e.target !== popup && !popup.contains(e.target)) {
-    popup.style.display = 'none';
-  }
+document.addEventListener('click', e => {
+  const menu = document.getElementById('ctx-menu');
+  if (!menu.contains(e.target)) menu.style.display = 'none';
 });
 
-function popupLookup() {
-  document.getElementById('dict-popup').style.display = 'none';
-  document.getElementById('dict-input').value = popupWord;
+function ctxLookup() {
+  document.getElementById('ctx-menu').style.display = 'none';
   switchPanel('dict');
-  dictLookup(popupWord);
-  window.getSelection()?.removeAllRanges();
+  const inp = document.getElementById('dict-input');
+  inp.value = '';
+  inp.focus();
+  renderDictHome();
 }
 
 // ── CLOCK ──
