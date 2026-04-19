@@ -180,11 +180,6 @@
   .dict-history-zh{font-family:var(--sans);font-size:14px;color:var(--text-dim);}
   .dict-history-py{font-size:9px;color:var(--amber-dim);}
 
-  /* Right-click context menu */
-  .ctx-menu{position:fixed;background:var(--bg2);border:1px solid var(--border);z-index:9998;display:none;min-width:140px;}
-  .ctx-item{padding:7px 14px;font-size:10px;color:var(--text-dim);cursor:pointer;letter-spacing:0.08em;transition:background 0.1s;}
-  .ctx-item:hover{background:var(--bg3);color:var(--green-bright);}
-
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:var(--bg);}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
@@ -309,9 +304,6 @@
 </div>
 
 <audio id="audio-el" preload="none"></audio>
-<div class="ctx-menu" id="ctx-menu">
-  <div class="ctx-item" onclick="ctxLookup()">查 Look up word</div>
-</div>
 
 <script>
 // ── CONFIG ──
@@ -1183,43 +1175,168 @@ function switchPanel(n) {
 }
 document.querySelectorAll('.panel').forEach(p => { if (!p.classList.contains('active')) p.style.display='none'; });
 
-// ── DICTIONARY ──
-let dictHistory = [];
+// ── DICTIONARY (CC-CEDICT bundled) ──
+// Fetches the CC-CEDICT file once, caches it in Cache API, parses into a Map
+// for instant offline lookups. ~7MB download on first use only.
 
-function dictLookup(query) {
+const CEDICT_URL  = 'https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz';
+const CEDICT_FALLBACK = 'https://raw.githubusercontent.com/mahavivo/english-wordlists/master/cedict_ts.u8';
+let cedictMap     = null;   // Map: traditional → [{trad, simp, pinyin, defs}]
+let cedictLoading = false;
+let dictHistory   = [];
+
+async function ensureCedict() {
+  if (cedictMap) return true;
+  if (cedictLoading) {
+    // Wait for existing load
+    while (cedictLoading) await new Promise(r => setTimeout(r, 100));
+    return !!cedictMap;
+  }
+  cedictLoading = true;
+  setDictStatus('// loading dictionary…');
+
+  try {
+    // Try cache first
+    let text = null;
+    if ('caches' in window) {
+      const cache  = await caches.open(CACHE_NAME);
+      const cached = await cache.match('cedict');
+      if (cached) {
+        text = await cached.text();
+        console.log('CC-CEDICT loaded from cache');
+      }
+    }
+    // Fetch if not cached
+    if (!text) {
+      setDictStatus('// downloading dictionary (one-time, ~7MB)…');
+      let r = await fetch(CEDICT_FALLBACK).catch(() => null);
+      if (!r || !r.ok) throw new Error('CC-CEDICT fetch failed');
+      text = await r.text();
+      // Cache for next time
+      if ('caches' in window) {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put('cedict', new Response(text));
+          console.log('CC-CEDICT cached');
+        } catch(e) { console.warn('CEDICT cache write failed:', e.message); }
+      }
+    }
+
+    // Parse into Map
+    cedictMap = new Map();
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('#') || !line.trim()) continue;
+      // Format: Traditional Simplified [pin1 yin1] /def1/def2/
+      const m = line.match(/^(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+\/(.+)\/\s*$/);
+      if (!m) continue;
+      const [, trad, simp, pinyin, defStr] = m;
+      const defs = defStr.split('/').filter(Boolean);
+      const entry = { trad, simp, pinyin, defs };
+      // Index by traditional
+      if (!cedictMap.has(trad)) cedictMap.set(trad, []);
+      cedictMap.get(trad).push(entry);
+      // Also index by simplified if different
+      if (simp !== trad) {
+        if (!cedictMap.has(simp)) cedictMap.set(simp, []);
+        cedictMap.get(simp).push(entry);
+      }
+    }
+    console.log('CC-CEDICT parsed:', cedictMap.size, 'entries');
+    setDictStatus('');
+    cedictLoading = false;
+    return true;
+  } catch(e) {
+    setDictStatus('// dictionary load failed');
+    console.error('CEDICT error:', e);
+    cedictLoading = false;
+    return false;
+  }
+}
+
+function setDictStatus(msg) {
+  const results = document.getElementById('dict-results');
+  if (msg) results.innerHTML = `<div class="dict-hint">${msg}</div>`;
+}
+
+async function dictLookup(query) {
   query = (query || '').trim();
   const results = document.getElementById('dict-results');
-  if (!query) {
-    renderDictHome();
-    return;
-  }
-  if (!/[\u4e00-\u9fff\u3400-\u4dbf]/.test(query)) {
+
+  if (!query) { renderDictHome(); return; }
+  if (!/[\u4e00-\u9fff\u3400-\u4dbf\uff00-\uffef]/.test(query)) {
     results.innerHTML = '<div class="dict-no-result">// enter Chinese characters to look up</div>';
     return;
   }
-  results.innerHTML = '<div class="dict-hint">// looking up…</div>';
 
   // Add to history
   dictHistory = [query, ...dictHistory.filter(h => h !== query)].slice(0, 8);
 
-  const url = `https://www.mdbg.net/chinese/dictionary?page=1&pagesize=6&wdrst=0&wdqb=${encodeURIComponent(query)}&format=json`;
-  fetch(url)
-    .then(r => { if (!r.ok) throw new Error('API error'); return r.json(); })
-    .then(data => renderDictResults(data, query))
-    .catch(() => {
-      results.innerHTML = `
-        <div class="dict-no-result">
-          // API unreachable<br><br>
-          <a href="https://www.mdbg.net/chinese/dictionary?wdqb=${encodeURIComponent(query)}"
-             target="_blank" style="color:var(--amber);letter-spacing:0.08em;">▸ open MDBG ↗</a>
-        </div>`;
-    });
+  const ready = await ensureCedict();
+  if (!ready) {
+    results.innerHTML = '<div class="dict-no-result">// dictionary unavailable</div>';
+    return;
+  }
+
+  // Look up exact match first, then substrings
+  const found = [];
+  const seen  = new Set();
+
+  // Exact match
+  for (const ch of query) {
+    const entries = cedictMap.get(query) || [];
+    for (const e of entries) {
+      const key = e.trad + e.pinyin;
+      if (!seen.has(key)) { seen.add(key); found.push(e); }
+    }
+  }
+
+  // If query is multi-char, also look up each character individually
+  if (query.length > 1) {
+    const entries = cedictMap.get(query) || [];
+    for (const e of entries) {
+      const key = e.trad + e.pinyin;
+      if (!seen.has(key)) { seen.add(key); found.push(e); }
+    }
+    for (const ch of query) {
+      for (const e of (cedictMap.get(ch) || [])) {
+        const key = e.trad + e.pinyin;
+        if (!seen.has(key)) { seen.add(key); found.push(e); }
+      }
+    }
+  } else {
+    // Single char — just direct lookup
+    for (const e of (cedictMap.get(query) || [])) {
+      const key = e.trad + e.pinyin;
+      if (!seen.has(key)) { seen.add(key); found.push(e); }
+    }
+  }
+
+  if (!found.length) {
+    results.innerHTML = `<div class="dict-no-result">// no results for "${query}"</div>`;
+    return;
+  }
+
+  results.innerHTML = found.slice(0, 8).map(e => {
+    const head = e.trad !== e.simp
+      ? `${e.trad} <span style="font-size:14px;color:var(--text-dim)">${e.simp}</span>`
+      : e.trad;
+    return `<div class="dict-entry">
+      <div class="dict-entry-head">
+        <span class="dict-zh">${head}</span>
+        <span class="dict-py">${e.pinyin}</span>
+      </div>
+      <div class="dict-def">${e.defs.slice(0,5).map(d =>
+        `<div class="dict-def-item">${d}</div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderDictHome() {
   const results = document.getElementById('dict-results');
   if (!dictHistory.length) {
-    results.innerHTML = '<div class="dict-hint">// type a Chinese word or character<br>// right-click PDF to look up<br>// powered by CC-CEDICT / MDBG</div>';
+    results.innerHTML = '<div class="dict-hint">// type a Chinese word or character<br>// powered by CC-CEDICT<br>// loads once, works offline</div>';
     return;
   }
   results.innerHTML = `
@@ -1230,71 +1347,15 @@ function renderDictHome() {
       </div>`).join('')}`;
 }
 
-function renderDictResults(data, query) {
-  const results = document.getElementById('dict-results');
-  const words = data?.data?.dict?.worddict;
-  if (!words || !words.length) {
-    results.innerHTML = `
-      <div class="dict-no-result">
-        // no results for "${query}"<br><br>
-        <a href="https://www.mdbg.net/chinese/dictionary?wdqb=${encodeURIComponent(query)}"
-           target="_blank" style="color:var(--amber);letter-spacing:0.08em;">▸ try MDBG ↗</a>
-      </div>`;
-    return;
-  }
-  results.innerHTML = words.slice(0, 6).map(w => {
-    const trad   = w.traditional || w.simplified || '';
-    const simp   = w.simplified  || '';
-    const pinyin = w.pinyin || '';
-    const defs   = (w.definitions || []).slice(0, 5);
-    const head   = trad !== simp && simp
-      ? `${trad} <span style="font-size:14px;color:var(--text-dim)">${simp}</span>`
-      : trad;
-    return `
-      <div class="dict-entry">
-        <div class="dict-entry-head">
-          <span class="dict-zh">${head}</span>
-          <span class="dict-py">${pinyin}</span>
-        </div>
-        <div class="dict-def">${defs.map(d =>
-          `<div class="dict-def-item">${d}</div>`).join('')}
-        </div>
-      </div>`;
-  }).join('');
-}
-
 function dictClear() {
   document.getElementById('dict-input').value = '';
   renderDictHome();
 }
 
-// ── CONTEXT MENU (right-click on PDF) ──
-let ctxWord = '';
-
-document.getElementById('pdf-area').addEventListener('contextmenu', e => {
-  e.preventDefault();
-  const menu = document.getElementById('ctx-menu');
-  // Position menu near cursor, keep in viewport
-  const x = Math.min(e.clientX, window.innerWidth  - 160);
-  const y = Math.min(e.clientY, window.innerHeight - 80);
-  menu.style.left    = x + 'px';
-  menu.style.top     = y + 'px';
-  menu.style.display = 'block';
-});
-
-document.addEventListener('click', e => {
-  const menu = document.getElementById('ctx-menu');
-  if (!menu.contains(e.target)) menu.style.display = 'none';
-});
-
-function ctxLookup() {
-  document.getElementById('ctx-menu').style.display = 'none';
-  switchPanel('dict');
-  const inp = document.getElementById('dict-input');
-  inp.value = '';
-  inp.focus();
-  renderDictHome();
-}
+// Pre-load dictionary when 查 tab is first opened
+document.querySelector('[onclick="switchPanel(\'dict\')"]').addEventListener('click', () => {
+  if (!cedictMap && !cedictLoading) ensureCedict();
+}, {once: true});
 
 // ── CLOCK ──
 function startClock() {
