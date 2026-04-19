@@ -50,7 +50,9 @@
   .li:hover{background:var(--bg3);}
   .li.active{background:var(--green-dim);border-left:2px solid var(--green);}
   .li.active .li-num{color:var(--green-bright);}
-  .li-num{font-size:9px;color:var(--amber-dim);letter-spacing:0.14em;margin-bottom:3px;}
+  .li-num{font-size:9px;color:var(--amber-dim);letter-spacing:0.14em;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;}
+  .li-edit{font-size:8px;color:var(--text-faint);background:none;border:1px solid var(--text-faint);padding:1px 5px;cursor:pointer;font-family:var(--mono);letter-spacing:0.07em;transition:all 0.12s;}
+  .li-edit:hover{border-color:var(--amber-dim);color:var(--amber-dim);}
   .li-zh{font-family:var(--sans);font-size:13px;color:var(--text);margin-bottom:2px;}
   .li-en{font-size:9px;color:var(--text-dim);}
   .li-bar{height:2px;background:var(--text-faint);margin-top:6px;border-radius:1px;overflow:hidden;}
@@ -99,7 +101,6 @@
   .panel{flex:1;overflow-y:auto;display:none;flex-direction:column;}
   .panel.active{display:flex;}
 
-  .np{padding:13px 14px;border-bottom:1px solid var(--border);background:var(--bg3);flex-shrink:0;}
   .np-lbl{font-size:9px;letter-spacing:0.17em;color:var(--text-faint);text-transform:uppercase;margin-bottom:5px;}
   .np-title{font-size:12px;color:var(--amber);margin-bottom:3px;}
   .np-title .zh{font-family:var(--sans);margin-right:5px;}
@@ -180,6 +181,30 @@
   .dict-history-zh{font-family:var(--sans);font-size:14px;color:var(--text-dim);}
   .dict-history-py{font-size:9px;color:var(--amber-dim);}
 
+  /* TRACK EDITOR OVERLAY */
+  #track-editor{display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;}
+  #track-editor.open{display:flex;}
+  .te-box{background:var(--bg2);border:1px solid var(--amber-dim);width:560px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;}
+  .te-hdr{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+  .te-title{font-size:11px;letter-spacing:0.15em;color:var(--amber);}
+  .te-close{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:14px;padding:2px 6px;transition:color 0.12s;}
+  .te-close:hover{color:var(--text);}
+  .te-note{padding:8px 16px;font-size:9px;color:var(--text-faint);letter-spacing:0.08em;border-bottom:1px solid var(--border);flex-shrink:0;line-height:1.7;}
+  .te-tracks{flex:1;overflow-y:auto;padding:10px 16px;}
+  .te-track{display:grid;grid-template-columns:80px 80px 1fr 60px 24px;gap:6px;align-items:center;margin-bottom:7px;}
+  .te-track input{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:10px;padding:3px 6px;width:100%;outline:none;transition:border-color 0.15s;}
+  .te-track input:focus{border-color:var(--amber);}
+  .te-track input::placeholder{color:var(--text-faint);}
+  .te-del{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:2px;transition:color 0.12s;}
+  .te-del:hover{color:#c84a3a;}
+  .te-col-hdr{display:grid;grid-template-columns:80px 80px 1fr 60px 24px;gap:6px;font-size:8px;color:var(--text-faint);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px;padding:0 0 4px;border-bottom:1px solid var(--text-faint);}
+  .te-foot{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;}
+  .te-add{background:none;border:1px solid var(--green-dim);color:var(--green);font-family:var(--mono);font-size:9px;padding:4px 11px;cursor:pointer;letter-spacing:0.09em;transition:all 0.12s;}
+  .te-add:hover{background:var(--green-dim);}
+  .te-save{background:var(--green-dim);border:1px solid var(--green);color:var(--green-bright);font-family:var(--mono);font-size:9px;padding:4px 14px;cursor:pointer;letter-spacing:0.09em;transition:all 0.12s;margin-left:auto;}
+  .te-save:hover{background:var(--green);color:var(--bg);}
+  .te-msg{font-size:9px;color:var(--text-faint);letter-spacing:0.07em;align-self:center;}
+
   ::-webkit-scrollbar{width:4px;}
   ::-webkit-scrollbar-track{background:var(--bg);}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
@@ -237,7 +262,6 @@
     </div>
 
     <div class="sr">
-      <!-- Persistent player — always visible regardless of active panel -->
       <div class="np">
         <div class="np-lbl">// now playing</div>
         <div class="np-title" id="np-title"><span class="zh">—</span></div>
@@ -269,7 +293,6 @@
         </div>
       </div>
 
-      <!-- Tabs sit below the persistent player -->
       <div class="ptabs">
         <button class="ptab active" onclick="switchPanel('audio')">TRACKS</button>
         <button class="ptab" onclick="switchPanel('vocab')">詞彙</button>
@@ -296,9 +319,32 @@
           <button onclick="dictClear()" class="dict-clear">✕</button>
         </div>
         <div id="dict-results" class="dict-results">
-          <div class="dict-hint">// type or paste a Chinese word above<br>// right-click the PDF to open here<br>// powered by CC-CEDICT / MDBG</div>
+          <div class="dict-hint">// type or paste a Chinese word above<br>// powered by CC-CEDICT / MDBG</div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- TRACK EDITOR OVERLAY -->
+<div id="track-editor">
+  <div class="te-box">
+    <div class="te-hdr">
+      <div class="te-title" id="te-title">// EDIT TRACKS</div>
+      <button class="te-close" onclick="closeTrackEditor()">✕</button>
+    </div>
+    <div class="te-note">
+      Each row = one audio section. FILE: e.g. <strong>02-01.mp3</strong> · ZH: section name in Chinese · EN: English label · PAGE: book page number where this section starts.
+      Changes are saved to Drive alongside your progress.
+    </div>
+    <div class="te-tracks">
+      <div class="te-col-hdr"><span>File</span><span>ZH name</span><span>EN name</span><span>Book page</span><span></span></div>
+      <div id="te-rows"></div>
+    </div>
+    <div class="te-foot">
+      <button class="te-add" onclick="addTrackRow()">+ ADD ROW</button>
+      <span class="te-msg" id="te-msg"></span>
+      <button class="te-save" onclick="saveTrackEditor()">SAVE TRACKS</button>
     </div>
   </div>
 </div>
@@ -314,6 +360,7 @@ const REDIRECT_URI = location.href.split('?')[0].split('#')[0].replace('accc-rea
 
 // ── MANIFEST ──
 // page numbers are BOOK page numbers — offset is calculated at runtime
+// vocab keys match track zh names for display grouping
 const MANIFEST = [
   { lesson:1, zh:'言論自由的界線', en:'The Limits of Free Speech', pages:[1,26],
     tracks:[
@@ -328,34 +375,65 @@ const MANIFEST = [
     ],
     vocab:{
       '引言':[
-        {n:1,zh:'言論',  py:'yánlùn',  en:'speech, act of speaking',          pos:'N'},
-        {n:2,zh:'界線',  py:'jièxiàn', en:'boundaries, demarcation',          pos:'N'},
-        {n:3,zh:'臉書',  py:'Liǎnshū', en:'Facebook',                         pos:'N'},
-        {n:4,zh:'則',    py:'zé',      en:'measure for short formal writings', pos:'M'},
-        {n:5,zh:'留言',  py:'liúyán',  en:'posted messages, comments',        pos:'N'},
-        {n:6,zh:'停止',  py:'tíngzhǐ', en:'to call off, cease',               pos:'Vp'},
-        {n:7,zh:'決策',  py:'juécè',   en:'policy',                           pos:'N'},
+        {n:1, zh:'言論',  py:'yánlùn',   en:'speech, act of speaking',                    pos:'N'},
+        {n:2, zh:'界線',  py:'jièxiàn',  en:'boundaries, demarcation',                    pos:'N'},
+        {n:3, zh:'臉書',  py:'Liǎnshū',  en:'Facebook',                                   pos:'N'},
+        {n:4, zh:'則',    py:'zé',       en:'measure for short, usually formal writings', pos:'M'},
+        {n:5, zh:'留言',  py:'liúyán',   en:'posted messages, comments',                  pos:'N'},
+        {n:6, zh:'停止',  py:'tíngzhǐ',  en:'to call off, cease',                         pos:'Vp'},
+        {n:7, zh:'決策',  py:'juécè',    en:'policy',                                     pos:'N'},
       ],
       '課文一':[
-        {n:1, zh:'無罪',    py:'wúzuì',        en:'not guilty',                  pos:'Vs'},
-        {n:2, zh:'反應',    py:'fǎnyìng',      en:'reaction; to respond',        pos:'N/V'},
-        {n:3, zh:'發表',    py:'fābiǎo',       en:'to publish, deliver',         pos:'V'},
-        {n:4, zh:'包容',    py:'bāoróng',      en:'tolerant',                    pos:'Vst'},
-        {n:5, zh:'展現',    py:'zhǎnxiàn',     en:'to reveal, show',             pos:'V'},
-        {n:6, zh:'胡作非為',py:'húzuò fēiwéi', en:'run amok, lawless behavior',  pos:'Id'},
-        {n:7, zh:'洗腦',    py:'xǐnǎo',        en:'to brainwash',                pos:'Vi'},
-        {n:8, zh:'盲點',    py:'mángdiǎn',     en:'blind spot',                  pos:'N'},
-        {n:9, zh:'立場',    py:'lìchǎng',      en:'standpoint, perspective',     pos:'N'},
-        {n:10,zh:'平衡',    py:'pínghéng',     en:'balance',                     pos:'N'},
-        {n:11,zh:'辯護',    py:'biànhù',       en:'to defend (legally)',         pos:'Vi'},
-        {n:12,zh:'真理',    py:'zhēnlǐ',       en:'the truth',                   pos:'N'},
-        {n:13,zh:'共識',    py:'gòngshí',      en:'consensus',                   pos:'N'},
-        {n:14,zh:'仇恨',    py:'chóuhèn',      en:'hatred, hostility',           pos:'N'},
-        {n:15,zh:'謠言',    py:'yáoyán',       en:'rumor',                       pos:'N'},
-        {n:16,zh:'霸凌',    py:'bàlíng',       en:'bully; to bully',             pos:'N/V'},
-        {n:17,zh:'負責',    py:'fùzé',         en:'to take responsibility',      pos:'Vs'},
-        {n:18,zh:'誤解',    py:'wùjiě',        en:'to misunderstand',            pos:'V'},
-        {n:19,zh:'封住',    py:'fēngzhù',      en:'to seal, block',              pos:'V'},
+        {n:1,  zh:'無罪',    py:'wúzuì',            en:'not guilty',                                               pos:'Vs'},
+        {n:2,  zh:'遭',      py:'zāo',              en:'agent marker in an adversative passive sentence',          pos:'Ptc'},
+        {n:3,  zh:'慘',      py:'cǎn',              en:'devastated',                                               pos:'Vs'},
+        {n:4,  zh:'反應',    py:'fǎnyìng',          en:'reaction; to respond',                                     pos:'N/V'},
+        {n:5,  zh:'發表',    py:'fābiǎo',           en:'to issue, publish (articles, news), deliver (speeches)',   pos:'V'},
+        {n:6,  zh:'司法',    py:'sīfǎ',             en:'judicial',                                                 pos:'N'},
+        {n:7,  zh:'判決',    py:'pànjué',           en:'judgement, sentencing (judicial)',                         pos:'N'},
+        {n:8,  zh:'無能',    py:'wúnéng',           en:'incompetent, inept, weak',                                 pos:'Vs'},
+        {n:9,  zh:'幸運',    py:'xìngyùn',          en:'lucky, fortunate',                                         pos:'Vs'},
+        {n:10, zh:'顧名思義',py:'gùmíngsīyì',       en:'as the name suggests / implies',                           pos:'Id'},
+        {n:11, zh:'接收',    py:'jiēshōu',          en:'to receive',                                               pos:'V'},
+        {n:12, zh:'來源',    py:'láiyuán',          en:'source',                                                   pos:'N'},
+        {n:13, zh:'處罰',    py:'chǔfá',            en:'to punish',                                                pos:'V'},
+        {n:14, zh:'包容',    py:'bāoróng',          en:'tolerant',                                                 pos:'Vst'},
+        {n:15, zh:'不論',    py:'bùlùn',            en:'regardless of whether',                                    pos:'Conj'},
+        {n:16, zh:'展現',    py:'zhǎnxiàn',         en:'to reveal, show',                                          pos:'V'},
+        {n:17, zh:'胡作非為',py:'húzuò fēiwéi',     en:'run amok, engage in lawless activities',                   pos:'Id'},
+        {n:18, zh:'一旦',    py:'yīdàn',            en:'once, as soon as',                                         pos:'Conj'},
+        {n:19, zh:'工具',    py:'gōngjù',           en:'tool, instrument',                                         pos:'N'},
+        {n:20, zh:'洗腦',    py:'xǐnǎo',            en:'to brainwash',                                             pos:'Vi'},
+        {n:21, zh:'權益',    py:'quányì',           en:'rights and interests',                                     pos:'N'},
+        {n:22, zh:'盲點',    py:'mángdiǎn',         en:'blind spot',                                               pos:'N'},
+        {n:23, zh:'立場',    py:'lìchǎng',          en:'standpoint, perspective',                                  pos:'N'},
+        {n:24, zh:'平衡',    py:'pínghéng',         en:'balance',                                                  pos:'N'},
+        {n:25, zh:'辯護',    py:'biànhù',           en:'to defend (legally)',                                      pos:'Vi'},
+        {n:26, zh:'無理取鬧',py:'wúlǐ qǔnào',      en:'act up, have tantrums, talk nonsense and cause trouble',   pos:'Id'},
+        {n:27, zh:'指正',    py:'zhǐzhèng',         en:'to point out mistakes, correct',                           pos:'V'},
+        {n:28, zh:'一來一往',py:'yīlái yīwǎng',     en:'amidst exchanges (of opinions)',                           pos:'Id'},
+        {n:29, zh:'真理',    py:'zhēnlǐ',           en:'the truth',                                                pos:'N'},
+        {n:30, zh:'越辯越明',py:'yuè biàn yuè míng',en:'the more s/t is debated, the clearer it becomes',          pos:'Id'},
+        {n:31, zh:'共識',    py:'gòngshí',          en:'consensus',                                                pos:'N'},
+        {n:32, zh:'亂象',    py:'luànxiàng',        en:'chaos, madness, disorder',                                 pos:'N'},
+        {n:33, zh:'攻擊',    py:'gōngjī',           en:'to attack',                                                pos:'V'},
+        {n:34, zh:'自殺',    py:'zìshā',            en:'to commit suicide',                                        pos:'Vp'},
+        {n:35, zh:'過於',    py:'guòyú',            en:'too, overly',                                              pos:'Adv'},
+        {n:36, zh:'事實上',  py:'shìshí shàng',     en:'actually, in actual fact',                                 pos:'Ph'},
+        {n:37, zh:'仇恨',    py:'chóuhèn',          en:'hatred, enmity, hostility',                                pos:'N'},
+        {n:38, zh:'不實',    py:'bùshí',            en:'untrue, false',                                            pos:'Vs-attr'},
+        {n:39, zh:'謠言',    py:'yáoyán',           en:'rumor',                                                    pos:'N'},
+        {n:40, zh:'霸凌',    py:'bàlíng',           en:'bully; to bully',                                          pos:'N/V'},
+        {n:41, zh:'負責',    py:'fùzé',             en:'to take responsibility for',                               pos:'Vs'},
+        {n:42, zh:'誤解',    py:'wùjiě',            en:'to misunderstand, misconstrue',                            pos:'V'},
+        {n:43, zh:'意義',    py:'yìyì',             en:'meaning, significance',                                    pos:'N'},
+        {n:44, zh:'因此',    py:'yīncǐ',            en:'because of this, for this reason',                        pos:'Adv'},
+        {n:45, zh:'否定',    py:'fǒudìng',          en:'to negate',                                                pos:'V'},
+        {n:46, zh:'價值',    py:'jiàzhí',           en:'value',                                                    pos:'N'},
+        {n:47, zh:'封住',    py:'fēngzhù',          en:'to seal, block',                                           pos:'V'},
+        {n:48, zh:'嘴',      py:'zuǐ',              en:'mouth, opinion',                                           pos:'N'},
+        {n:49, zh:'混亂',    py:'hùnluàn',          en:'tumultuous, chaotic',                                      pos:'Vs'},
+        {n:50, zh:'唯一',    py:'wéiyī',            en:'one and only, sole',                                       pos:'Vs-attr'},
       ],
     }
   },
@@ -373,9 +451,9 @@ const MANIFEST = [
 // ── STATE ──
 let token=null, driveFiles={}, pdfDoc=null, curPage=1, totPages=0;
 let curLesson=null, curTrack=null, progress={}, sessLog=[];
-let pdfPageOffset=0;       // PDF file page 1 = book page (1 - offset)
-let renderTask=null;       // track active PDF render so we can cancel
-let audioBlobURLs={};      // cache blob URLs per filename
+let pdfPageOffset=0;
+let renderTask=null;
+let audioBlobURLs={};
 const audio = document.getElementById('audio-el');
 
 // ── AUTH ──
@@ -401,7 +479,6 @@ function signOut() {
 }
 
 function checkAuth() {
-  // Returning from OAuth redirect (token in hash)
   if (location.hash.includes('access_token')) {
     const p = new URLSearchParams(location.hash.slice(1));
     token = p.get('access_token');
@@ -415,7 +492,6 @@ function checkAuth() {
     launch();
     return;
   }
-  // Stored token still valid
   try {
     const stored = JSON.parse(localStorage.getItem('accc_token') || 'null');
     if (stored && stored.token && stored.expires > Date.now()) {
@@ -426,7 +502,6 @@ function checkAuth() {
       return;
     }
   } catch(e) {}
-  // No valid token — show auth screen
 }
 
 // ── SILENT RE-AUTH ──
@@ -435,12 +510,10 @@ let silentRefreshTimer = null;
 function scheduleSilentRefresh(inSeconds) {
   clearTimeout(silentRefreshTimer);
   const ms = Math.max(inSeconds * 1000, 10000);
-  console.log(`Silent token refresh scheduled in ${Math.floor(ms/60000)} min`);
   silentRefreshTimer = setTimeout(silentRefresh, ms);
 }
 
 function silentRefresh() {
-  console.log('Attempting silent token refresh…');
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
@@ -450,12 +523,10 @@ function silentRefresh() {
     prompt: 'none'
   });
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params;
-
   const iframe = document.createElement('iframe');
   iframe.style.display = 'none';
   iframe.src = authUrl;
   document.body.appendChild(iframe);
-
   const handler = e => {
     try {
       const hash = e.data;
@@ -470,25 +541,19 @@ function silentRefresh() {
             expires: Date.now() + (expiresIn - 60) * 1000
           }));
           scheduleSilentRefresh(expiresIn - 60);
-          console.log('Silent refresh succeeded');
         }
       }
-    } catch(err) { console.warn('Silent refresh message error:', err); }
+    } catch(err) {}
     window.removeEventListener('message', handler);
     iframe.remove();
   };
   window.addEventListener('message', handler);
-
-  // Fallback after 10s
   setTimeout(() => {
     iframe.remove();
     window.removeEventListener('message', handler);
     try {
       const stored = JSON.parse(localStorage.getItem('accc_token') || 'null');
-      if (!stored || stored.expires <= Date.now()) {
-        console.log('Silent iframe failed, falling back to redirect re-auth');
-        signIn('none');
-      }
+      if (!stored || stored.expires <= Date.now()) signIn('none');
     } catch(e) {}
   }, 10000);
 }
@@ -501,12 +566,9 @@ async function launch() {
   buildLessonList();
   buildSessLog();
   await indexFiles();
-  // Load unified state from Drive (authoritative) with localStorage fallback
   await loadState();
-  // Apply progress bars to all lessons
   MANIFEST.forEach((_,i) => updateProgressBar(i));
   buildSessLog();
-  // Restore last lesson position
   const startLesson = state.lastLesson || 0;
   selectLesson(startLesson);
 }
@@ -537,8 +599,6 @@ async function indexFiles() {
       pt = res.nextPageToken;
     } while (pt);
 
-    console.log('Drive files found:', Object.keys(driveFiles));
-
     const PDF_NAME = 'A Course in Contemporary Chinese-5 (900w).pdf';
     const pdf = Object.keys(driveFiles).find(n => n === PDF_NAME)
              || Object.keys(driveFiles).find(n => n.toLowerCase().includes('900w') && n.toLowerCase().endsWith('.pdf'))
@@ -555,14 +615,12 @@ async function indexFiles() {
   }
 }
 
-// Fetch audio as blob — cached in Cache API after first fetch
 async function getAudioBlob(filename) {
   if (audioBlobURLs[filename]) return audioBlobURLs[filename];
   const id = driveFiles[filename];
   if (!id) { console.warn('Audio file not found in Drive:', filename); return null; }
   const cacheKey = `audio-${id}`;
   try {
-    // Try cache first
     if ('caches' in window) {
       const cache  = await caches.open(CACHE_NAME);
       const cached = await cache.match(cacheKey);
@@ -571,16 +629,13 @@ async function getAudioBlob(filename) {
         if (blob.size > 0) {
           const url = URL.createObjectURL(blob);
           audioBlobURLs[filename] = url;
-          console.log('Audio loaded from cache:', filename);
           return url;
         }
       }
     }
-    // Fetch from Drive
     setNpQ(`// fetching ${filename}…`);
     const r    = await driveGet(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
     const blob = await r.blob();
-    // Cache it
     if ('caches' in window) {
       try {
         const cache = await caches.open(CACHE_NAME);
@@ -604,7 +659,6 @@ const CACHE_NAME = 'accc-pdf-v1';
 
 async function loadPDF(id) {
   try {
-    // Get file metadata to check modification time
     const meta = await driveJSON(
       `https://www.googleapis.com/drive/v3/files/${id}?fields=modifiedTime,name`
     );
@@ -613,7 +667,6 @@ async function loadPDF(id) {
     const cachedMod     = localStorage.getItem(`${cacheKey}-mod`);
     let pdfData = null;
 
-    // Try browser cache first if file hasn't changed
     if ('caches' in window && cachedMod === driveModified) {
       try {
         const cache  = await caches.open(CACHE_NAME);
@@ -623,24 +676,20 @@ async function loadPDF(id) {
           if (buf.byteLength > 0) {
             pdfData = buf;
             setMsg('Loading PDF from cache…');
-            console.log('PDF loaded from cache');
           }
         }
       } catch(e) { console.warn('Cache read failed:', e.message); }
     }
 
-    // Fetch from Drive if no valid cache
     if (!pdfData) {
       setMsg(`Downloading PDF…\nFirst load only — will be cached for instant future access.`);
       const r = await driveGet(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
       pdfData = await r.arrayBuffer();
-      // Write to cache
       if ('caches' in window) {
         try {
           const cache = await caches.open(CACHE_NAME);
           await cache.put(cacheKey, new Response(pdfData.slice(0)));
           localStorage.setItem(`${cacheKey}-mod`, driveModified);
-          console.log('PDF cached successfully');
         } catch(e) { console.warn('Cache write failed:', e.message); }
       }
     }
@@ -651,7 +700,8 @@ async function loadPDF(id) {
     document.getElementById('pg-total').textContent = totPages;
     hideState();
     renderPage(1);
-    if (!state.pageOffset) showOffsetHelper();
+    // Only show offset helper if it has never been calibrated
+    if (!state.offsetCalibrated) showOffsetHelper();
   } catch(e) {
     setMsg(`PDF load error: ${e.message}`, true);
     console.error(e);
@@ -727,11 +777,9 @@ async function renderPage(bookPageOrPdfPage, isPdfPage=false) {
     wrap.innerHTML = '';
     wrap.appendChild(canvas);
 
-    // Render canvas
     renderTask = page.render({canvasContext: canvas.getContext('2d'), viewport: vp});
     await renderTask.promise;
     renderTask = null;
-
   } catch(e) {
     if (e.name !== 'RenderingCancelledException') console.error('Render error:', e);
     renderTask = null;
@@ -770,7 +818,10 @@ function hideState() {
 function buildLessonList() {
   document.getElementById('lesson-list').innerHTML = MANIFEST.map((l,i) => `
     <div class="li" id="li-${i}" onclick="selectLesson(${i})">
-      <div class="li-num">LESSON ${String(l.lesson).padStart(2,'0')}</div>
+      <div class="li-num">
+        <span>LESSON ${String(l.lesson).padStart(2,'0')}</span>
+        <button class="li-edit" onclick="event.stopPropagation();openTrackEditor(${i})">✎ EDIT</button>
+      </div>
       <div class="li-zh">${l.zh}</div>
       <div class="li-en">${l.en}</div>
       <div class="li-bar"><div class="li-fill" id="lf-${i}" style="width:0%"></div></div>
@@ -783,7 +834,7 @@ function selectLesson(idx) {
     curTrack = null;
     state.lastLesson = idx;
     saveState();
-    const L = MANIFEST[idx];
+    const L = getEffectiveLesson(idx);
 
     document.querySelectorAll('.li').forEach((el,i) => el.classList.toggle('active', i===idx));
     document.getElementById('pg-total').textContent = totPages || L.pages[1];
@@ -795,7 +846,6 @@ function selectLesson(idx) {
 
     document.getElementById('tl-lbl').textContent = `// lesson ${String(L.lesson).padStart(2,'0')} · tracks`;
 
-    // Reset audio
     audio.pause();
     audio.src = '';
     document.getElementById('play-btn').textContent = '▶';
@@ -816,11 +866,21 @@ function selectLesson(idx) {
   }
 }
 
+// Returns lesson data merged with any custom tracks from state
+function getEffectiveLesson(idx) {
+  const base = MANIFEST[idx];
+  const custom = state.customTracks && state.customTracks[idx];
+  if (custom && custom.length) {
+    return { ...base, tracks: custom };
+  }
+  return base;
+}
+
 // ── TRACKS ──
 function buildTrackList(L) {
   const list = document.getElementById('track-list');
   if (!L.tracks.length) {
-    list.innerHTML = `<div style="padding:18px 14px;font-size:10px;color:var(--text-faint);letter-spacing:0.09em;">// tracks not yet mapped for this lesson</div>`;
+    list.innerHTML = `<div style="padding:18px 14px;font-size:10px;color:var(--text-faint);letter-spacing:0.09em;">// tracks not yet mapped for this lesson<br><span style="color:var(--amber-dim)">// use ✎ EDIT to add sections</span></div>`;
     return;
   }
   list.innerHTML = L.tracks.map((t,i) => `
@@ -834,14 +894,13 @@ function buildTrackList(L) {
 async function selectTrack(idx) {
   try {
     if (curLesson === null) return;
-    const L = MANIFEST[curLesson];
+    const L = getEffectiveLesson(curLesson);
     if (!L || !L.tracks[idx]) { console.error('Track not found:', idx); return; }
     const T = L.tracks[idx];
     curTrack = idx;
 
     document.querySelectorAll('.ti').forEach((el,i) => el.classList.toggle('active', i===idx));
 
-    // Stop current audio cleanly
     audio.pause();
     audio.src = '';
     document.getElementById('play-btn').textContent = '▶';
@@ -853,15 +912,12 @@ async function selectTrack(idx) {
     document.getElementById('t-cur').textContent = '0:00';
     document.getElementById('t-tot').textContent = '0:00';
 
-    // Jump PDF to section page
     jumpPage(T.page);
 
-    // Update notes context
     document.getElementById('notes-ctx').textContent = `L${L.lesson} · ${T.zh} · ${T.file.replace('.mp3','')}`;
     document.getElementById('nta').value = getNote(curLesson, idx);
     document.getElementById('nmsg').textContent = getNote(curLesson, idx) ? '// saved' : '// unsaved';
 
-    // Fetch audio as blob (fixes CORS)
     const blobURL = await getAudioBlob(T.file);
     if (blobURL) {
       audio.src = blobURL;
@@ -893,7 +949,7 @@ function togglePlay() {
 }
 function replay10() { audio.currentTime = Math.max(0, audio.currentTime - 10); }
 function nextTrack() {
-  const L = MANIFEST[curLesson];
+  const L = getEffectiveLesson(curLesson);
   if (!L || !L.tracks.length) return;
   selectTrack(curTrack === null ? 0 : (curTrack + 1) % L.tracks.length);
 }
@@ -937,7 +993,6 @@ function buildVocab(L) {
 
 // ── CHECKLIST ──
 function buildChecklist(L, lessonIdx) {
-  // Remove old checklist
   const old = document.getElementById('cl-wrap');
   if (old) old.remove();
   if (!L.tracks.length) return;
@@ -947,7 +1002,6 @@ function buildChecklist(L, lessonIdx) {
   cl.id = 'cl-wrap';
   cl.className = 'checklist';
 
-  // Capture lessonIdx in closure safely
   cl.innerHTML = `<div class="cl-hdr">// lesson ${String(L.lesson).padStart(2,'0')} · section progress</div>` +
     L.tracks.map((t,i) => {
       const chk = saved[i] || false;
@@ -958,7 +1012,6 @@ function buildChecklist(L, lessonIdx) {
       </div>`;
     }).join('');
 
-  // Use event delegation — single listener on the container
   cl.addEventListener('click', e => {
     const item = e.target.closest('.cl-item');
     if (!item) return;
@@ -967,7 +1020,6 @@ function buildChecklist(L, lessonIdx) {
     const box = document.getElementById(`clb-${li}-${ti}`);
     const lbl = document.getElementById(`cll-${li}-${ti}`);
     if (e.target === box || box.contains(e.target)) {
-      // Toggle check
       const chk = !box.classList.contains('chk');
       box.classList.toggle('chk', chk);
       box.textContent = chk ? '✓' : '';
@@ -977,7 +1029,6 @@ function buildChecklist(L, lessonIdx) {
       saveProgress();
       updateProgressBar(li);
     } else {
-      // Jump to track
       selectTrack(ti);
       switchPanel('audio');
     }
@@ -987,45 +1038,126 @@ function buildChecklist(L, lessonIdx) {
   updateProgressBar(lessonIdx);
 }
 
-// ── UNIFIED STATE ──
-// Single state object synced to Drive as state.json
-// Structure:
-// {
-//   version: 1,
-//   lastUpdated: timestamp,
-//   pageOffset: number,
-//   lastLesson: number,
-//   sessionLog: [...],
-//   lessons: {
-//     "0": { checked: [bool,...], notes: { lesson: "...", t0: "...", t1: "..." } },
-//     ...
-//   }
-// }
+// ── TRACK EDITOR ──
+let editorLessonIdx = null;
 
+function openTrackEditor(idx) {
+  editorLessonIdx = idx;
+  const L = MANIFEST[idx];
+  const custom = state.customTracks && state.customTracks[idx];
+  const tracks = custom && custom.length ? custom : (L.tracks.length ? L.tracks : []);
+
+  document.getElementById('te-title').textContent =
+    `// EDIT TRACKS · L${String(L.lesson).padStart(2,'0')} ${L.zh}`;
+  document.getElementById('te-msg').textContent = '';
+
+  const rows = document.getElementById('te-rows');
+  rows.innerHTML = '';
+  if (tracks.length) {
+    tracks.forEach(t => addTrackRow(t));
+  } else {
+    // Pre-fill template rows based on lesson number
+    const num = String(L.lesson).padStart(2,'0');
+    [
+      {file:`${num}-01.mp3`,zh:'引言',    en:'Introduction',   page:L.pages[0]},
+      {file:`${num}-02.mp3`,zh:'課文一',  en:'Text 1',         page:L.pages[0]+1},
+      {file:`${num}-03.mp3`,zh:'生詞',    en:'New Words',      page:L.pages[0]+3},
+      {file:`${num}-04.mp3`,zh:'語法點',  en:'Grammar Points', page:L.pages[0]+5},
+      {file:`${num}-05.mp3`,zh:'四字格',  en:'4-Char Idioms',  page:L.pages[0]+9},
+      {file:`${num}-06.mp3`,zh:'課文二',  en:'Text 2',         page:L.pages[0]+11},
+      {file:`${num}-07.mp3`,zh:'生詞二',  en:'New Words 2',    page:L.pages[0]+12},
+      {file:`${num}-08.mp3`,zh:'語法點二',en:'Grammar Points 2',page:L.pages[0]+14},
+    ].forEach(t => addTrackRow(t));
+  }
+
+  document.getElementById('track-editor').classList.add('open');
+}
+
+function addTrackRow(t) {
+  t = t || {file:'',zh:'',en:'',page:''};
+  const row = document.createElement('div');
+  row.className = 'te-track';
+  row.innerHTML = `
+    <input type="text" placeholder="02-01.mp3" value="${t.file||''}" data-field="file">
+    <input type="text" placeholder="引言" value="${t.zh||''}" data-field="zh" style="font-family:var(--sans)">
+    <input type="text" placeholder="Introduction" value="${t.en||''}" data-field="en">
+    <input type="number" placeholder="27" value="${t.page||''}" data-field="page" min="1">
+    <button class="te-del" onclick="this.closest('.te-track').remove()" title="Delete row">✕</button>
+  `;
+  document.getElementById('te-rows').appendChild(row);
+}
+
+function saveTrackEditor() {
+  const rows = document.querySelectorAll('#te-rows .te-track');
+  const tracks = [];
+  for (const row of rows) {
+    const file = row.querySelector('[data-field="file"]').value.trim();
+    const zh   = row.querySelector('[data-field="zh"]').value.trim();
+    const en   = row.querySelector('[data-field="en"]').value.trim();
+    const page = parseInt(row.querySelector('[data-field="page"]').value) || 0;
+    if (file || zh) {
+      // Auto-append .mp3 if missing
+      tracks.push({ file: file.endsWith('.mp3') ? file : file + '.mp3', zh, en, page });
+    }
+  }
+
+  if (!state.customTracks) state.customTracks = {};
+  state.customTracks[editorLessonIdx] = tracks;
+  saveState();
+
+  document.getElementById('te-msg').textContent = `// saved ${tracks.length} tracks`;
+
+  // Refresh lesson if currently active
+  if (curLesson === editorLessonIdx) {
+    const L = getEffectiveLesson(editorLessonIdx);
+    buildTrackList(L);
+    buildChecklist(L, editorLessonIdx);
+  }
+
+  setTimeout(closeTrackEditor, 800);
+}
+
+function closeTrackEditor() {
+  document.getElementById('track-editor').classList.remove('open');
+}
+
+// Close editor on backdrop click
+document.getElementById('track-editor').addEventListener('click', e => {
+  if (e.target === document.getElementById('track-editor')) closeTrackEditor();
+});
+
+// ── UNIFIED STATE ──
 let state = {
   version: 1,
   lastUpdated: 0,
   pageOffset: 0,
+  offsetCalibrated: false,
   lastLesson: 0,
   sessionLog: [],
-  lessons: {}
+  lessons: {},
+  customTracks: {}
 };
 let syncDebounceTimer = null;
-let syncStatus = 'idle'; // idle | syncing | error
 
 function defaultState() {
-  return { version:1, lastUpdated:0, pageOffset:0, lastLesson:0, sessionLog:[], lessons:{} };
+  return {
+    version: 1,
+    lastUpdated: 0,
+    pageOffset: 0,
+    offsetCalibrated: false,
+    lastLesson: 0,
+    sessionLog: [],
+    lessons: {},
+    customTracks: {}
+  };
 }
 
-// Load state: Drive is authoritative, localStorage is fallback/cache
 async function loadState() {
-  // First load from localStorage as immediate fallback
   try {
     const local = JSON.parse(localStorage.getItem('accc_state') || 'null');
     if (local) state = { ...defaultState(), ...local };
   } catch(e) {}
 
-  // Then try Drive — overwrite if Drive is newer
   try {
     const id = driveFiles['state.json'];
     if (id) {
@@ -1033,25 +1165,17 @@ async function loadState() {
       const remote = await r.json();
       if (remote && remote.lastUpdated >= (state.lastUpdated || 0)) {
         state = { ...defaultState(), ...remote };
-        // Write back to localStorage so next load is fast
         localStorage.setItem('accc_state', JSON.stringify(state));
-        console.log('State loaded from Drive, last updated:', new Date(state.lastUpdated).toLocaleString());
-      } else {
-        console.log('Local state is newer, keeping local');
       }
-    } else {
-      console.log('No state.json in Drive yet — will create on first save');
     }
   } catch(e) {
     console.warn('Could not load state from Drive, using local:', e.message);
   }
 
-  // Apply loaded state to app
   pdfPageOffset = state.pageOffset || 0;
   progress = state.lessons || {};
 }
 
-// Save state: debounced, writes to both localStorage and Drive
 function saveState() {
   state.lastUpdated = Date.now();
   state.lessons = progress;
@@ -1059,16 +1183,13 @@ function saveState() {
   state.sessionLog = sessLog;
   if (curLesson !== null) state.lastLesson = curLesson;
 
-  // Write to localStorage immediately
   localStorage.setItem('accc_state', JSON.stringify(state));
 
-  // Debounce Drive writes — don't hammer Drive on every keystroke
   clearTimeout(syncDebounceTimer);
   syncDebounceTimer = setTimeout(pushStateToDrive, 2000);
 }
 
 async function pushStateToDrive() {
-  syncStatus = 'syncing';
   const body = JSON.stringify(state, null, 2);
   try {
     const id = driveFiles['state.json'];
@@ -1089,19 +1210,14 @@ async function pushStateToDrive() {
       const nf = await r.json();
       driveFiles['state.json'] = nf.id;
     }
-    syncStatus = 'idle';
-    console.log('State synced to Drive at', new Date().toLocaleTimeString());
   } catch(e) {
-    syncStatus = 'error';
     console.warn('Drive sync failed:', e.message);
   }
 }
 
-// ── PROGRESS (now thin wrappers over state) ──
-function loadProgress() {} // no-op — handled by loadState
 function saveProgress() { saveState(); }
 function updateProgressBar(li) {
-  const L = MANIFEST[li];
+  const L = getEffectiveLesson(li);
   if (!L.tracks.length) return;
   const saved = progress[li]?.checked || [];
   const pct = (saved.filter(Boolean).length / L.tracks.length) * 100;
@@ -1109,15 +1225,11 @@ function updateProgressBar(li) {
   if (f) f.style.width = pct + '%';
 }
 
-// ── OFFSET (now part of state) ──
-function loadOffset() {
-  pdfPageOffset = state.pageOffset || 0;
-}
 function applyOffset() {
   const val = parseInt(document.getElementById('offset-input').value) || 1;
   pdfPageOffset = val - 1;
+  state.offsetCalibrated = true;
   saveState();
-  console.log('Page offset saved:', pdfPageOffset);
   dismissHelper();
   if (curLesson !== null) jumpPage(MANIFEST[curLesson].pages[0]);
 }
@@ -1142,14 +1254,13 @@ function saveNote() {
 // ── SESSION LOG ──
 function logSess() {
   const L = MANIFEST[curLesson];
-  const lbl = `L${L.lesson}${curTrack !== null ? ' · ' + L.tracks[curTrack]?.zh : ''}`;
+  const lbl = `L${L.lesson}${curTrack !== null ? ' · ' + getEffectiveLesson(curLesson).tracks[curTrack]?.zh : ''}`;
   const time = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric'});
   sessLog = [{lbl, time}, ...sessLog.filter(e => e.lbl !== lbl)].slice(0, 8);
   saveState();
   buildSessLog();
 }
 function buildSessLog() {
-  // Prefer state.sessionLog if loaded, else localStorage fallback
   if (state.sessionLog?.length) sessLog = state.sessionLog;
   else { try { sessLog = JSON.parse(localStorage.getItem('accc-sesslog') || '[]'); } catch(e) {} }
   document.getElementById('sess-entries').innerHTML = sessLog.length
@@ -1175,20 +1286,19 @@ function switchPanel(n) {
 }
 document.querySelectorAll('.panel').forEach(p => { if (!p.classList.contains('active')) p.style.display='none'; });
 
-// ── DICTIONARY (CC-CEDICT bundled) ──
-// Fetches the CC-CEDICT file once, caches it in Cache API, parses into a Map
-// for instant offline lookups. ~7MB download on first use only.
-
-const CEDICT_URL  = 'https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz';
+// ── DICTIONARY (CC-CEDICT) ──
+// Primary source: gbraad mirror (plain text, no gz)
+// Fallback: mahavivo mirror
+const CEDICT_PRIMARY  = 'https://raw.githubusercontent.com/gbraad/cc-cedict/master/cedict_ts.u8';
 const CEDICT_FALLBACK = 'https://raw.githubusercontent.com/mahavivo/english-wordlists/master/cedict_ts.u8';
-let cedictMap     = null;   // Map: traditional → [{trad, simp, pinyin, defs}]
+
+let cedictMap     = null;
 let cedictLoading = false;
 let dictHistory   = [];
 
 async function ensureCedict() {
   if (cedictMap) return true;
   if (cedictLoading) {
-    // Wait for existing load
     while (cedictLoading) await new Promise(r => setTimeout(r, 100));
     return !!cedictMap;
   }
@@ -1196,28 +1306,50 @@ async function ensureCedict() {
   setDictStatus('// loading dictionary…');
 
   try {
-    // Try cache first
     let text = null;
+
+    // Try cache first
     if ('caches' in window) {
-      const cache  = await caches.open(CACHE_NAME);
-      const cached = await cache.match('cedict');
-      if (cached) {
-        text = await cached.text();
-        console.log('CC-CEDICT loaded from cache');
-      }
+      try {
+        const cache  = await caches.open(CACHE_NAME);
+        const cached = await cache.match('cedict');
+        if (cached) {
+          text = await cached.text();
+          console.log('CC-CEDICT loaded from cache, size:', text.length);
+        }
+      } catch(e) { console.warn('CEDICT cache read failed:', e.message); }
     }
-    // Fetch if not cached
+
+    // Fetch if not cached — try primary then fallback
     if (!text) {
       setDictStatus('// downloading dictionary (one-time, ~7MB)…');
-      let r = await fetch(CEDICT_FALLBACK).catch(() => null);
-      if (!r || !r.ok) throw new Error('CC-CEDICT fetch failed');
+      let r = null;
+      try {
+        r = await fetch(CEDICT_PRIMARY);
+        if (!r.ok) r = null;
+      } catch(e) { r = null; }
+
+      if (!r) {
+        try {
+          r = await fetch(CEDICT_FALLBACK);
+          if (!r.ok) r = null;
+        } catch(e) { r = null; }
+      }
+
+      if (!r) throw new Error('All CC-CEDICT sources failed — check your network connection');
       text = await r.text();
+
+      // Validate we got something real
+      if (text.length < 100000 || !text.includes('[')) {
+        throw new Error('CC-CEDICT data appears invalid or truncated');
+      }
+
       // Cache for next time
       if ('caches' in window) {
         try {
           const cache = await caches.open(CACHE_NAME);
           await cache.put('cedict', new Response(text));
-          console.log('CC-CEDICT cached');
+          console.log('CC-CEDICT cached successfully');
         } catch(e) { console.warn('CEDICT cache write failed:', e.message); }
       }
     }
@@ -1227,16 +1359,13 @@ async function ensureCedict() {
     const lines = text.split('\n');
     for (const line of lines) {
       if (line.startsWith('#') || !line.trim()) continue;
-      // Format: Traditional Simplified [pin1 yin1] /def1/def2/
       const m = line.match(/^(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+\/(.+)\/\s*$/);
       if (!m) continue;
       const [, trad, simp, pinyin, defStr] = m;
       const defs = defStr.split('/').filter(Boolean);
       const entry = { trad, simp, pinyin, defs };
-      // Index by traditional
       if (!cedictMap.has(trad)) cedictMap.set(trad, []);
       cedictMap.get(trad).push(entry);
-      // Also index by simplified if different
       if (simp !== trad) {
         if (!cedictMap.has(simp)) cedictMap.set(simp, []);
         cedictMap.get(simp).push(entry);
@@ -1247,9 +1376,11 @@ async function ensureCedict() {
     cedictLoading = false;
     return true;
   } catch(e) {
-    setDictStatus('// dictionary load failed');
+    const msg = `// dictionary load failed<br>// ${e.message}<br>// tap 查 tab again to retry`;
+    setDictStatus(msg);
     console.error('CEDICT error:', e);
     cedictLoading = false;
+    cedictMap = null; // allow retry
     return false;
   }
 }
@@ -1269,47 +1400,27 @@ async function dictLookup(query) {
     return;
   }
 
-  // Add to history
   dictHistory = [query, ...dictHistory.filter(h => h !== query)].slice(0, 8);
 
   const ready = await ensureCedict();
-  if (!ready) {
-    results.innerHTML = '<div class="dict-no-result">// dictionary unavailable</div>';
-    return;
-  }
+  if (!ready) return; // error already shown by ensureCedict
 
-  // Look up exact match first, then substrings
   const found = [];
   const seen  = new Set();
 
-  // Exact match
-  for (const ch of query) {
-    const entries = cedictMap.get(query) || [];
-    for (const e of entries) {
+  function addEntries(word) {
+    for (const e of (cedictMap.get(word) || [])) {
       const key = e.trad + e.pinyin;
       if (!seen.has(key)) { seen.add(key); found.push(e); }
     }
   }
 
-  // If query is multi-char, also look up each character individually
+  // Exact match on full query
+  addEntries(query);
+
+  // If multi-char, also break down individual characters
   if (query.length > 1) {
-    const entries = cedictMap.get(query) || [];
-    for (const e of entries) {
-      const key = e.trad + e.pinyin;
-      if (!seen.has(key)) { seen.add(key); found.push(e); }
-    }
-    for (const ch of query) {
-      for (const e of (cedictMap.get(ch) || [])) {
-        const key = e.trad + e.pinyin;
-        if (!seen.has(key)) { seen.add(key); found.push(e); }
-      }
-    }
-  } else {
-    // Single char — just direct lookup
-    for (const e of (cedictMap.get(query) || [])) {
-      const key = e.trad + e.pinyin;
-      if (!seen.has(key)) { seen.add(key); found.push(e); }
-    }
+    for (const ch of query) addEntries(ch);
   }
 
   if (!found.length) {
@@ -1336,7 +1447,7 @@ async function dictLookup(query) {
 function renderDictHome() {
   const results = document.getElementById('dict-results');
   if (!dictHistory.length) {
-    results.innerHTML = '<div class="dict-hint">// type a Chinese word or character<br>// powered by CC-CEDICT<br>// loads once, works offline</div>';
+    results.innerHTML = '<div class="dict-hint">// type a Chinese word or character<br>// powered by CC-CEDICT<br>// loads once, works offline after first use</div>';
     return;
   }
   results.innerHTML = `
