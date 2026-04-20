@@ -334,8 +334,7 @@
       <button class="te-close" onclick="closeTrackEditor()">✕</button>
     </div>
     <div class="te-note">
-      Each row = one audio section. FILE: e.g. <strong>02-01.mp3</strong> · ZH: section name in Chinese · EN: English label · PAGE: book page number where this section starts.
-      Changes are saved to Drive alongside your progress.
+      Edit any field and hit SAVE. <strong style="color:var(--text)">ZH</strong> = Chinese section name shown in the track list and checklist. <strong style="color:var(--text)">EN</strong> = English label. <strong style="color:var(--text)">FILE</strong> = audio filename (must match Drive). <strong style="color:var(--text)">PAGE</strong> = book page number. Changes are saved to Drive.
     </div>
     <div class="te-tracks">
       <div class="te-col-hdr"><span>File</span><span>ZH name</span><span>EN name</span><span>Book page</span><span></span></div>
@@ -1518,29 +1517,46 @@ async function ensureCedict() {
       setDictStatus('// downloading dictionary (one-time, ~7MB)…');
 
       // Try Drive first (avoids CORS entirely)
-      const cedictId = driveFiles[CEDICT_FILENAME];
+      // Look for the file by exact name, then also try common variants
+      const cedictCandidates = [CEDICT_FILENAME, 'cedict_ts.u8', 'cedict.u8', 'cc-cedict.txt'];
+      let cedictId = null;
+      let cedictFoundName = null;
+      for (const name of cedictCandidates) {
+        if (driveFiles[name]) { cedictId = driveFiles[name]; cedictFoundName = name; break; }
+      }
+      // Also scan for any file containing 'cedict' in its name
+      if (!cedictId) {
+        const cedictKey = Object.keys(driveFiles).find(k => k.toLowerCase().includes('cedict'));
+        if (cedictKey) { cedictId = driveFiles[cedictKey]; cedictFoundName = cedictKey; }
+      }
+
+      console.log('Drive files available:', Object.keys(driveFiles).join(', '));
+      console.log('CEDICT file found in Drive:', cedictFoundName || 'NONE');
+
       if (cedictId) {
         try {
+          setDictStatus(`// fetching ${cedictFoundName} from Drive…`);
           const r = await driveGet(`https://www.googleapis.com/drive/v3/files/${cedictId}?alt=media`);
-          if (r.ok) text = await r.text();
-          console.log('CC-CEDICT loaded from Drive');
-        } catch(e) { console.warn('Drive CEDICT fetch failed:', e.message); }
+          text = await r.text();
+          console.log('CC-CEDICT loaded from Drive, size:', text.length);
+        } catch(e) { console.warn('Drive CEDICT fetch failed:', e.message); text = null; }
       }
 
       // Fallback to public URLs
       if (!text) {
         for (const url of CEDICT_FALLBACK_URLS) {
           try {
+            setDictStatus(`// trying ${url.split('/').slice(-1)[0]}…`);
             const r = await fetch(url);
-            if (r.ok) { text = await r.text(); break; }
+            if (r.ok) { text = await r.text(); console.log('CEDICT loaded from URL:', url); break; }
           } catch(e) { console.warn('URL fetch failed:', url, e.message); }
         }
       }
 
       if (!text) throw new Error(
         cedictId
-          ? 'Drive fetch failed — check your token'
-          : 'No cedict_ts.u8 in Drive folder and all URL fallbacks failed.\nUpload cedict_ts.u8 to your Drive folder to enable the dictionary.'
+          ? `Drive fetch failed for "${cedictFoundName}" — check console for details`
+          : `Dictionary file not found.\nLooked for: ${cedictCandidates.join(', ')}\nAlso scanned all Drive files for "cedict" in name — nothing found.\nDrive files present: ${Object.keys(driveFiles).slice(0,10).join(', ')}`
       );
 
       // Cache for next time
@@ -1553,9 +1569,18 @@ async function ensureCedict() {
       }
     }
 
-    // Parse into Map
+    // Validate we got real CEDICT data
+    if (!text || text.length < 10000) {
+      throw new Error(`File too small (${text ? text.length : 0} bytes) — may not be the correct file`);
+    }
+    if (!text.includes('[') || !text.includes('/')) {
+      throw new Error('File does not look like CC-CEDICT format — check the file');
+    }
+
+    // Parse into Map (handle both Unix and Windows line endings)
     cedictMap = new Map();
-    const lines = text.split('\n');
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    let parsed = 0;
     for (const line of lines) {
       if (line.startsWith('#') || !line.trim()) continue;
       const m = line.match(/^(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+\/(.+)\/\s*$/);
@@ -1569,8 +1594,9 @@ async function ensureCedict() {
         if (!cedictMap.has(simp)) cedictMap.set(simp, []);
         cedictMap.get(simp).push(entry);
       }
+      parsed++;
     }
-    console.log('CC-CEDICT parsed:', cedictMap.size, 'entries');
+    console.log('CC-CEDICT parsed:', cedictMap.size, 'entries from', parsed, 'lines');
     setDictStatus('');
     cedictLoading = false;
     return true;
@@ -1586,7 +1612,10 @@ async function ensureCedict() {
 
 function setDictStatus(msg) {
   const results = document.getElementById('dict-results');
-  if (msg) results.innerHTML = `<div class="dict-hint">${msg}</div>`;
+  if (msg) {
+    const lines = msg.replace(/\n/g, '<br>');
+    results.innerHTML = `<div class="dict-hint" style="white-space:normal">${lines}</div>`;
+  }
 }
 
 async function dictLookup(query) {
